@@ -362,7 +362,7 @@ please consult a certified professional.
 
 ### Month 2: MVP Development (🔄 In Progress)
 - [x] Auth & onboarding (✅ Completed)
-- [ ] Basic logging functionality
+- [x] Basic logging functionality (✅ Completed)
 - [ ] Simple charts
 - [ ] Beta testing with 5 users
 
@@ -407,4 +407,4 @@ This app fills a genuine gap in the pet tech market. Reactive dog owners are:
 
 The combination of practical training tools + emotional support community creates a sticky product with clear monetization path.
 
-**Status Update:** Supabase backend and dog profile onboarding are now complete and functional. The app automatically routes users through the onboarding flow (welcome → dog profile → assessment quiz → technique recommendation) before accessing the main app. Next priorities: trigger logging UI, progress charts, and BAT walk mode.
+**Status Update:** Supabase backend, dog profile onboarding, and trigger logging are now complete and functional. The app automatically routes users through the onboarding flow (welcome → dog profile → assessment quiz → technique recommendation) before accessing the main app. Trigger logging UI allows quick 2-tap logging with severity, distance, and notes tracking. Next priorities: progress charts and BAT walk mode.

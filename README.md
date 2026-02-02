@@ -104,7 +104,13 @@ npx expo start
   - Reactivity level assessment (1-5 scale)
   - Training method matching quiz (BAT, CC/DS, LAT)
   - Automatic Supabase integration
-- ⏳ Trigger logging with severity, distance, location
+- ✅ **Trigger Logging** - Quick 2-tap logging with:
+  - Trigger type selection (Dog off/on-leash, Human, Bike, Car, Noise, Other)
+  - Severity rating (1-5 scale with color coding)
+  - Distance tracking (meters)
+  - Optional notes
+  - Recent logs display
+  - Automatic Supabase sync
 - ⏳ BAT training mode with real-time distance alerts
 - ⏳ Progress analytics and charts
 - ⏳ Community forum
@@ -147,7 +153,7 @@ All tables have RLS enabled with policies ensuring:
 - [x] Auth routing with automatic onboarding redirect
 
 ### In Progress ⏳
-- [ ] Build trigger logging UI
+- [x] Build trigger logging UI
 - [ ] Add location tracking for walks
 - [ ] Create progress charts
 - [ ] Implement community forum
