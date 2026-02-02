@@ -5,16 +5,25 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#007AFF',
+        tabBarActiveTintColor: '#7C3AED',
         tabBarInactiveTintColor: '#999',
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="home" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="walk-tab"
+        options={{
+          title: 'Walk',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="walk" color={color} size={size} />
           ),
         }}
       />

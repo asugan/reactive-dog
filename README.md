@@ -28,7 +28,10 @@ app/
 │   ├── community.tsx     # Forum
 │   └── _layout.tsx
 ├── walk/
-│   └── active.tsx        # Active walk mode
+│   ├── _layout.tsx       # Walk stack navigator
+│   ├── index.tsx         # Pre-walk setup & checklist
+│   ├── active.tsx        # Active walk mode with GPS tracking
+│   └── summary.tsx       # Post-walk reflection
 ├── settings/
 │   └── profile.tsx
 ├── onboarding/
@@ -117,7 +120,15 @@ npx expo start
   - Bar chart: Triggers by type
   - Stats cards: Total reactions, avg severity, week-over-week comparison
   - Recent activity list
-- ⏳ BAT training mode with real-time distance alerts
+- ✅ **BAT Training Mode** - Full training walk experience with:
+  - Pre-walk checklist (treats, equipment, mindset)
+  - Distance threshold configuration (5-50m alerts)
+  - Active walk mode with GPS tracking & timer
+  - Technique reminders (U-Turn, Find It, Look at That)
+  - Quick trigger logging during walk
+  - Post-walk reflection & success rating
+  - Pause/resume functionality
+  - Haptic feedback for logging
 - ⏳ Community forum
 - ⏳ PDF export for behaviorists
 
@@ -160,7 +171,7 @@ All tables have RLS enabled with policies ensuring:
 ### In Progress ⏳
 - [x] Build trigger logging UI
 - [x] Create progress charts
-- [ ] Add location tracking for walks
+- [x] BAT training mode with GPS tracking & distance alerts
 - [ ] Implement community forum
 - [ ] Configure PostHog analytics
 
