@@ -94,23 +94,31 @@ Reactive dog owners face:
 app/
 ├── (auth)/
 │   ├── login.tsx
-│   └── signup.tsx
+│   ├── signup.tsx
+│   └── _layout.tsx
 ├── (tabs)/
 │   ├── index.tsx         # Dashboard
 │   ├── log.tsx           # Quick trigger log
 │   ├── progress.tsx      # Charts & stats
-│   └── community.tsx     # Forum
+│   ├── community.tsx     # Forum
+│   └── _layout.tsx
 ├── walk/
-│   ├── active.tsx        # Active walk mode
-│   └── summary.tsx       # Post-walk reflection
+│   └── active.tsx        # Active walk mode (future)
 ├── settings/
-│   ├── profile.tsx
-│   ├── subscription.tsx
-│   └── export.tsx        # PDF export
-└── onboarding/
-    ├── welcome.tsx
-    ├── dog-profile.tsx
-    └── technique-intro.tsx
+│   └── profile.tsx       # (future)
+├── onboarding/
+│   ├── _layout.tsx       # Stack navigator
+│   ├── index.tsx         # Welcome + stats
+│   ├── dog-profile.tsx   # Dog info & triggers
+│   ├── assessment.tsx    # 4-question reactivity quiz
+│   └── technique.tsx     # Training method recommendation
+├── _layout.tsx           # Root with auth/onboarding guards
+├── lib/
+│   ├── supabase.ts       # Supabase client
+│   └── posthog.ts        # PostHog config
+└── supabase/
+    └── migrations/
+        └── 001_initial_schema.sql
 ```
 
 ---
@@ -143,12 +151,20 @@ app/
 
 ## User Flow
 
-### Onboarding
-1. **Welcome:** "You're not alone - 30% of dogs are reactive"
-2. **Dog Profile:** Name, age, breed, specific reactivity triggers
-3. **Assessment Quiz:** "What does your dog do when they see another dog?"
-4. **Technique Match:** Auto-suggest BAT, CC/DS, or LAT based on responses
-5. **First Walk Setup:** Tutorial for logging first trigger
+### Onboarding (✅ Implemented)
+1. **Welcome Screen:** "You're not alone - 30% of dogs are reactive" with statistics and motivation
+2. **Dog Profile:** Collect name, breed, age, weight, and reactivity level (1-5 scale)
+3. **Trigger Selection:** Multi-select trigger types (Dogs on/off-leash, Humans, Bikes, Cars, Noise, Other)
+4. **Assessment Quiz:** 4-question reactivity assessment to determine:
+   - Behavioral patterns (staring vs barking vs fleeing)
+   - Trigger distance awareness
+   - Food responsiveness
+   - Training goals
+5. **Technique Match:** Algorithm auto-suggests:
+   - **BAT** (Behavior Adjustment Training) - For dogs who bark/lunge
+   - **CC/DS** (Counter-Conditioning/Desensitization) - For fearful/anxious dogs
+   - **LAT** (Look at That) - For dogs who stare intensely
+6. **Auto-save:** Dog profile saved to Supabase with recommended technique
 
 ### Daily Usage
 1. **Morning:** Check dashboard for yesterday's summary
@@ -337,14 +353,15 @@ please consult a certified professional.
 - [ ] Survey: "What do you currently use?"
 - [ ] Competitor app deep-dive
 
-### Week 3-4: Design & Prototype
-- [ ] Create wireframes (Figma)
-- [ ] Design database schema
-- [ ] Set up Expo project
-- [ ] Supabase project setup
+### Week 3-4: Design & Prototype (✅ Completed)
+- [x] Create wireframes (Figma)
+- [x] Design database schema
+- [x] Set up Expo project
+- [x] Supabase project setup
+- [x] Implement onboarding screens
 
-### Month 2: MVP Development
-- [ ] Auth & onboarding
+### Month 2: MVP Development (🔄 In Progress)
+- [x] Auth & onboarding (✅ Completed)
 - [ ] Basic logging functionality
 - [ ] Simple charts
 - [ ] Beta testing with 5 users
@@ -390,4 +407,4 @@ This app fills a genuine gap in the pet tech market. Reactive dog owners are:
 
 The combination of practical training tools + emotional support community creates a sticky product with clear monetization path.
 
-**Ready to start?** Begin with Reddit research and 5 user interviews to validate assumptions.
+**Status Update:** Supabase backend and dog profile onboarding are now complete and functional. The app automatically routes users through the onboarding flow (welcome → dog profile → assessment quiz → technique recommendation) before accessing the main app. Next priorities: trigger logging UI, progress charts, and BAT walk mode.

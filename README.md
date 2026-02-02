@@ -32,8 +32,12 @@ app/
 ├── settings/
 │   └── profile.tsx
 ├── onboarding/
-│   └── welcome.tsx
-├── _layout.tsx
+│   ├── _layout.tsx       # Onboarding stack navigator
+│   ├── index.tsx         # Welcome screen
+│   ├── dog-profile.tsx   # Dog info & triggers
+│   ├── assessment.tsx    # Reactivity quiz
+│   └── technique.tsx     # Training method recommendation
+├── _layout.tsx           # Root layout with auth/onboarding routing
 ├── supabase/
 │   └── migrations/
 │       └── 001_initial_schema.sql
@@ -91,12 +95,20 @@ npx expo start
 
 ## Features
 
-### MVP (V1)
-- ✅ Trigger logging with severity, distance, location
-- ✅ BAT training mode with real-time distance alerts
-- ✅ Progress analytics and charts
-- ✅ Community forum
-- ✅ PDF export for behaviorists
+### MVP (V1) - Implementation Status
+- ✅ **Supabase Backend** - Auth, database, and RLS policies configured
+- ✅ **Dog Profile Onboarding** - Multi-step flow with:
+  - Welcome screen with statistics
+  - Dog profile creation (name, breed, age, weight)
+  - Trigger selection (Dogs, Humans, Bikes, Cars, Noise, Other)
+  - Reactivity level assessment (1-5 scale)
+  - Training method matching quiz (BAT, CC/DS, LAT)
+  - Automatic Supabase integration
+- ⏳ Trigger logging with severity, distance, location
+- ⏳ BAT training mode with real-time distance alerts
+- ⏳ Progress analytics and charts
+- ⏳ Community forum
+- ⏳ PDF export for behaviorists
 
 ### Freemium Model
 | Feature | Free | Pro ($4.99/mo) |
@@ -126,15 +138,20 @@ All tables have RLS enabled with policies ensuring:
 - Community posts are readable by everyone but only editable by author
 - Profile data is viewable by all but only editable by owner
 
-## Next Steps
+## Development Status
 
-1. [ ] Set up Supabase project and run migrations
-2. [ ] Configure PostHog analytics
-3. [ ] Implement dog profile onboarding flow
-4. [ ] Build trigger logging UI
-5. [ ] Add location tracking for walks
-6. [ ] Create progress charts
-7. [ ] Implement community forum
+### Completed ✅
+- [x] Set up Supabase project and run migrations
+- [x] Configure Supabase client and RLS policies
+- [x] Implement dog profile onboarding flow (5 screens)
+- [x] Auth routing with automatic onboarding redirect
+
+### In Progress ⏳
+- [ ] Build trigger logging UI
+- [ ] Add location tracking for walks
+- [ ] Create progress charts
+- [ ] Implement community forum
+- [ ] Configure PostHog analytics
 
 ## Resources
 
