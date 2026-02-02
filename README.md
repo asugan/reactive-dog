@@ -111,8 +111,13 @@ npx expo start
   - Optional notes
   - Recent logs display
   - Automatic Supabase sync
+- ✅ **Progress Analytics** - Charts & statistics with:
+  - Time range selector (7/30/90 days)
+  - Line chart: Reactions over time
+  - Bar chart: Triggers by type
+  - Stats cards: Total reactions, avg severity, week-over-week comparison
+  - Recent activity list
 - ⏳ BAT training mode with real-time distance alerts
-- ⏳ Progress analytics and charts
 - ⏳ Community forum
 - ⏳ PDF export for behaviorists
 
@@ -154,8 +159,8 @@ All tables have RLS enabled with policies ensuring:
 
 ### In Progress ⏳
 - [x] Build trigger logging UI
+- [x] Create progress charts
 - [ ] Add location tracking for walks
-- [ ] Create progress charts
 - [ ] Implement community forum
 - [ ] Configure PostHog analytics
 
