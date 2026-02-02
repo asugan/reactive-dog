@@ -158,7 +158,11 @@ export default function WalkSetupScreen() {
   };
 
   const handleCancel = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
   };
 
   return (
