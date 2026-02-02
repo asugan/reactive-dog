@@ -1,0 +1,148 @@
+# Reactive Dog Training App
+
+Mobile app for owners of reactive dogs (dogs that bark, lunge, or exhibit aggressive behavior toward other dogs, people, or stimuli).
+
+## Tech Stack
+
+- **Frontend:** React Native with Expo (TypeScript)
+- **Backend:** Supabase (Auth, PostgreSQL, Storage, Edge Functions)
+- **Maps:** expo-location, react-native-maps
+- **UI:** react-native-paper
+- **Charts:** react-native-chart-kit
+- **Analytics:** PostHog
+- **Payments:** RevenueCat (future)
+- **Notifications:** expo-notifications
+
+## Project Structure
+
+```
+app/
+├── (auth)/
+│   ├── login.tsx
+│   ├── signup.tsx
+│   └── _layout.tsx
+├── (tabs)/
+│   ├── index.tsx         # Dashboard
+│   ├── log.tsx           # Quick trigger log
+│   ├── progress.tsx      # Charts & stats
+│   ├── community.tsx     # Forum
+│   └── _layout.tsx
+├── walk/
+│   └── active.tsx        # Active walk mode
+├── settings/
+│   └── profile.tsx
+├── onboarding/
+│   └── welcome.tsx
+├── _layout.tsx
+├── supabase/
+│   └── migrations/
+│       └── 001_initial_schema.sql
+├── lib/
+│   ├── supabase.ts       # Supabase client
+│   └── posthog.ts        # PostHog config
+└── .env.example
+```
+
+## Setup
+
+### 1. Install dependencies
+
+```bash
+cd reactive-dog
+npm install
+```
+
+### 2. Supabase Setup
+
+1. Go to [supabase.com](https://supabase.com) and create a new project
+2. Copy your project URL and anon key
+3. Run the SQL migration in `supabase/migrations/001_initial_schema.sql` in the Supabase SQL editor
+4. Create `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+5. Fill in your Supabase credentials in `.env`:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### 3. PostHog Setup
+
+1. Go to [posthog.com](https://posthog.com) and create a project
+2. Get your API key
+3. Add to `.env`:
+
+```
+EXPO_PUBLIC_POSTHOG_KEY=your_posthog_key
+EXPO_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+```
+
+### 4. Run the app
+
+```bash
+npm start
+# or
+npx expo start
+```
+
+## Features
+
+### MVP (V1)
+- ✅ Trigger logging with severity, distance, location
+- ✅ BAT training mode with real-time distance alerts
+- ✅ Progress analytics and charts
+- ✅ Community forum
+- ✅ PDF export for behaviorists
+
+### Freemium Model
+| Feature | Free | Pro ($4.99/mo) |
+|---------|------|----------------|
+| Daily logs | 3/day | Unlimited |
+| Data history | 30 days | Lifetime |
+| Basic charts | ✅ | ✅ |
+| Advanced analytics | ❌ | ✅ |
+| PDF reports | ❌ | ✅ |
+| Community posting | Read-only | Full access |
+
+## Development
+
+### Database Schema
+
+The app uses the following tables:
+- `profiles` - User profiles (extends auth.users)
+- `dog_profiles` - Dog information and triggers
+- `trigger_logs` - Reaction logs with location, severity
+- `walks` - BAT session tracking
+- `community_posts` - Forum posts
+
+### Row Level Security
+
+All tables have RLS enabled with policies ensuring:
+- Users can only access their own dog and trigger data
+- Community posts are readable by everyone but only editable by author
+- Profile data is viewable by all but only editable by owner
+
+## Next Steps
+
+1. [ ] Set up Supabase project and run migrations
+2. [ ] Configure PostHog analytics
+3. [ ] Implement dog profile onboarding flow
+4. [ ] Build trigger logging UI
+5. [ ] Add location tracking for walks
+6. [ ] Create progress charts
+7. [ ] Implement community forum
+
+## Resources
+
+- [Supabase Docs](https://supabase.com/docs)
+- [Expo Docs](https://docs.expo.dev)
+- [PostHog React Native](https://posthog.com/docs/libraries/react-native)
+- [React Native Paper](https://callstack.github.io/react-native-paper/)
+
+## License
+
+MIT
