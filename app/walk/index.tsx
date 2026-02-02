@@ -157,8 +157,21 @@ export default function WalkSetupScreen() {
     }
   };
 
+  const handleCancel = () => {
+    router.back();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#374151" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>BAT Walk Setup</Text>
+        <View style={styles.placeholder} />
+      </View>
+
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <Text style={styles.title}>BAT Walk Setup</Text>
         <Text style={styles.subtitle}>
@@ -319,6 +332,15 @@ export default function WalkSetupScreen() {
           </Text>
         </TouchableOpacity>
 
+        {/* Cancel Button */}
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={handleCancel}
+          disabled={loading}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+
         {/* Info Card */}
         <View style={styles.infoCard}>
           <MaterialCommunityIcons name="information" size={20} color="#7C3AED" />
@@ -336,6 +358,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  placeholder: {
+    width: 40,
+  },
   scrollView: {
     flex: 1,
   },
@@ -344,7 +387,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#1F2937',
     marginBottom: 8,
@@ -495,5 +538,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     lineHeight: 20,
+  },
+  cancelButton: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6B7280',
   },
 });
