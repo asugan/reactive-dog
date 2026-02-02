@@ -129,7 +129,11 @@ npx expo start
   - Post-walk reflection & success rating
   - Pause/resume functionality
   - Haptic feedback for logging
-- ⏳ Community forum
+- ✅ Community forum - Anonymous support community with:
+  - Post types: General, Win of the Day, Question, Success Story
+  - Anonymous posting (auto-generated names)
+  - Like system
+  - Filter by post type
 - ⏳ PDF export for behaviorists
 
 ### Freemium Model
