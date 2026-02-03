@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
+import MapView, { Marker, Circle } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -15,6 +16,8 @@ interface TriggerLog {
   severity: number;
   distance_meters: number | null;
   logged_at: string;
+  location_latitude: number | null;
+  location_longitude: number | null;
 }
 
 interface Stats {
@@ -57,10 +60,44 @@ export default function ProgressScreen() {
   const [timeRange, setTimeRange] = useState<'7days' | '30days' | '90days'>('7days');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [mapRegion, setMapRegion] = useState({
+    latitude: 39.9334,
+    longitude: 32.8597,
+    latitudeDelta: 0.0922,
+    longitudeDelta: 0.0421,
+  });
 
   useEffect(() => {
     fetchLogs();
   }, [timeRange]);
+
+  // Calculate map region when logs change
+  useEffect(() => {
+    const logsWithLocation = logs.filter(log => log.location_latitude && log.location_longitude);
+    if (logsWithLocation.length > 0) {
+      const latitudes = logsWithLocation.map(log => log.location_latitude!);
+      const longitudes = logsWithLocation.map(log => log.location_longitude!);
+      
+      const minLat = Math.min(...latitudes);
+      const maxLat = Math.max(...latitudes);
+      const minLng = Math.min(...longitudes);
+      const maxLng = Math.max(...longitudes);
+      
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLng = (minLng + maxLng) / 2;
+      
+      const latDelta = (maxLat - minLat) * 1.5 || 0.01;
+      const lngDelta = (maxLng - minLng) * 1.5 || 0.01;
+      
+      setMapRegion({
+        latitude: centerLat,
+        longitude: centerLng,
+        latitudeDelta: Math.max(latDelta, 0.01),
+        longitudeDelta: Math.max(lngDelta, 0.01),
+      });
+    }
+  }, [logs]);
 
   const fetchLogs = async () => {
     try {
@@ -74,7 +111,7 @@ export default function ProgressScreen() {
 
       const { data, error } = await supabase
         .from('trigger_logs')
-        .select('*')
+        .select('id, trigger_type, severity, distance_meters, logged_at, location_latitude, location_longitude')
         .eq('owner_id', user.id)
         .gte('logged_at', cutoffDate.toISOString())
         .order('logged_at', { ascending: true });
@@ -290,20 +327,30 @@ export default function ProgressScreen() {
               <Text style={styles.title}>Progress</Text>
               <Text style={styles.subtitle}>Track your dog's improvement over time</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
-              onPress={generateReport}
-              disabled={exporting || logs.length === 0}
-            >
-              {exporting ? (
-                <ActivityIndicator size="small" color="#7C3AED" />
-              ) : (
-                <>
-                  <MaterialCommunityIcons name="file-pdf-box" size={20} color="#7C3AED" />
-                  <Text style={styles.exportButtonText}>Export</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity
+                style={[styles.mapButton, logs.filter(l => l.location_latitude).length === 0 && styles.mapButtonDisabled]}
+                onPress={() => setShowMap(true)}
+                disabled={logs.filter(l => l.location_latitude).length === 0}
+              >
+                <MaterialCommunityIcons name="map-marker" size={20} color="#7C3AED" />
+                <Text style={styles.mapButtonText}>Map</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+                onPress={generateReport}
+                disabled={exporting || logs.length === 0}
+              >
+                {exporting ? (
+                  <ActivityIndicator size="small" color="#7C3AED" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="file-pdf-box" size={20} color="#7C3AED" />
+                    <Text style={styles.exportButtonText}>Export</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -467,6 +514,64 @@ export default function ProgressScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Map Modal */}
+      <Modal
+        visible={showMap}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMap(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.mapHeader}>
+              <Text style={styles.mapTitle}>Trigger Map</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setShowMap(false)}
+              >
+                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion}
+              >
+                {logs
+                  .filter(log => log.location_latitude && log.location_longitude)
+                  .map((log, index) => (
+                    <Marker
+                      key={log.id}
+                      coordinate={{
+                        latitude: log.location_latitude!,
+                        longitude: log.location_longitude!,
+                      }}
+                      pinColor={TRIGGER_COLORS[log.trigger_type] || '#6B7280'}
+                      title={TRIGGER_LABELS[log.trigger_type]}
+                      description={`Severity: ${log.severity} | ${new Date(log.logged_at).toLocaleDateString()}`}
+                    />
+                  ))}
+              </MapView>
+              
+              {/* Legend */}
+              <View style={styles.mapLegend}>
+                <Text style={styles.legendTitle}>Trigger Types</Text>
+                <View style={styles.legendItems}>
+                  {Object.entries(TRIGGER_LABELS).map(([key, label]) => (
+                    <View key={key} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: TRIGGER_COLORS[key] }]} />
+                      <Text style={styles.legendText}>{label.split(' ')[0]}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -662,6 +767,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  mapButtonDisabled: {
+    opacity: 0.5,
+  },
+  mapButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -678,5 +804,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#7C3AED',
+  },
+  // Map Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#fff',
+  },
+  mapTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  closeButton: {
+    padding: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+  },
+  mapContainer: {
+    flex: 1,
+  },
+  map: {
+    flex: 1,
+  },
+  mapLegend: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  legendTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  legendItems: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  calloutContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  calloutTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  calloutSeverity: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  calloutDate: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 4,
   },
 });

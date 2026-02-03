@@ -136,6 +136,11 @@ npx expo start
   - Bar chart: Triggers by type
   - Stats cards: Total reactions, avg severity, week-over-week comparison
   - Recent activity list
+  - **Interactive Trigger Map** - Visualize all reactive incidents on a map:
+    - Color-coded pins by trigger type
+    - GPS coordinates from BAT walks and quick logs
+    - Auto-zoom to show all triggers
+    - Tap pins for detailed info (type, severity, date)
 - ✅ **BAT Training Mode** - Full training walk experience with:
   - Pre-walk checklist (treats, equipment, mindset)
   - Distance threshold configuration (5-50m alerts)

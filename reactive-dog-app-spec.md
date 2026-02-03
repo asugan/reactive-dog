@@ -57,6 +57,12 @@ Reactive dog owners face:
    - This week vs last week comparison
 ✅ Time range selector (7/30/90 days)
 ✅ Recent activity list
+✅ Interactive Trigger Map - Visual hotspot analysis:
+   - Color-coded pins for each trigger type on map
+   - GPS coordinates from all walks and quick logs
+   - Auto-zoom to fit all trigger locations
+   - Tap-to-view details (trigger type, severity, date)
+   - Legend showing trigger type colors
 ✅ PDF export for behaviorists (professional reports) - Implemented with:
    - HTML-based report generation via Supabase Edge Function
    - Professional layout with dog profile, statistics, and logs
