@@ -77,6 +77,22 @@ EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
+6. Deploy the PDF report edge function (optional, for PDF export feature):
+
+```bash
+# Install Supabase CLI if not already installed
+npm install -g supabase
+
+# Login to Supabase
+supabase login
+
+# Link your project
+supabase link --project-ref your-project-ref
+
+# Deploy the edge function
+supabase functions deploy generate-report
+```
+
 ### 3. PostHog Setup
 
 1. Go to [posthog.com](https://posthog.com) and create a project
@@ -134,7 +150,11 @@ npx expo start
   - Anonymous posting (auto-generated names)
   - Like system
   - Filter by post type
-- ⏳ PDF export for behaviorists
+- ✅ PDF export for behaviorists - Professional reports with:
+  - Dog profile summary
+  - Reaction statistics and trends
+  - BAT training session logs
+  - Shareable PDF format
 
 ### Freemium Model
 | Feature | Free | Pro ($4.99/mo) |
@@ -176,7 +196,8 @@ All tables have RLS enabled with policies ensuring:
 - [x] Build trigger logging UI
 - [x] Create progress charts
 - [x] BAT training mode with GPS tracking & distance alerts
-- [ ] Implement community forum
+- [x] Implement community forum
+- [x] PDF export for behaviorists
 - [ ] Configure PostHog analytics
 
 ## Resources

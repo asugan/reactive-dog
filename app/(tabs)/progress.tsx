@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 
@@ -54,6 +56,7 @@ export default function ProgressScreen() {
   });
   const [timeRange, setTimeRange] = useState<'7days' | '30days' | '90days'>('7days');
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchLogs();
@@ -204,6 +207,55 @@ export default function ProgressScreen() {
     return '#EF4444';
   };
 
+  const generateReport = async () => {
+    try {
+      setExporting(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to generate reports');
+        return;
+      }
+
+      // Call the edge function
+      const { data, error } = await supabase.functions.invoke('generate-report', {
+        body: { userId: user.id, timeRange },
+      });
+
+      if (error) {
+        console.error('Error calling edge function:', error);
+        Alert.alert('Error', 'Failed to generate report. Please try again.');
+        return;
+      }
+
+      if (!data || !data.html) {
+        Alert.alert('Error', 'No report data received');
+        return;
+      }
+
+      // Generate PDF from HTML
+      const { uri } = await Print.printToFileAsync({
+        html: data.html,
+        base64: false,
+      });
+
+      // Share the PDF
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `${data.reportData?.dogName || 'Dog'} - Training Report`,
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Success', 'Report generated successfully!');
+      }
+    } catch (error) {
+      console.error('Error generating report:', error);
+      Alert.alert('Error', 'Failed to generate report. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const chartConfig = {
     backgroundColor: '#fff',
     backgroundGradientFrom: '#fff',
@@ -233,8 +285,26 @@ export default function ProgressScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>Progress</Text>
-          <Text style={styles.subtitle}>Track your dog's improvement over time</Text>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.title}>Progress</Text>
+              <Text style={styles.subtitle}>Track your dog's improvement over time</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+              onPress={generateReport}
+              disabled={exporting || logs.length === 0}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color="#7C3AED" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="file-pdf-box" size={20} color="#7C3AED" />
+                  <Text style={styles.exportButtonText}>Export</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Time Range Selector */}
@@ -583,6 +653,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   recentDistance: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  exportButtonDisabled: {
+    opacity: 0.5,
+  },
+  exportButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#7C3AED',
