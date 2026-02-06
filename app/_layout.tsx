@@ -1,9 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
 import { pb, initializePocketBase, isAuthenticated, subscribeToAuthChanges } from '../lib/pocketbase';
+import { AnimatedSplashScreen } from '../components/AnimatedSplashScreen';
 // TODO: PostHog - import { PostHogProvider } from '../lib/posthog';
+
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Ignore if splash screen was already prevented.
+});
+
+SplashScreen.setOptions({
+  duration: 1000,
+  fade: true,
+});
 
 function useProtectedRoute() {
   const segments = useSegments();
@@ -64,11 +75,18 @@ function useProtectedRoute() {
 
 function RootLayoutNav() {
   const isReady = useProtectedRoute();
-  
-  if (!isReady) {
-    return null; // Or a loading screen
+  const [isSplashDone, setIsSplashDone] = useState(false);
+
+  const handleSplashComplete = useCallback(() => {
+    SplashScreen.hideAsync().finally(() => {
+      setIsSplashDone(true);
+    });
+  }, []);
+
+  if (!isSplashDone) {
+    return <AnimatedSplashScreen start={isReady} onComplete={handleSplashComplete} />;
   }
-  
+
   return <Slot />;
 }
 
