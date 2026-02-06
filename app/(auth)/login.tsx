@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TextInput, Button, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
-import { loginWithEmail } from '../../lib/pocketbase';
+import { loginWithEmail, loginWithOAuth } from '../../lib/pocketbase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -16,6 +16,18 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Login failed';
+      alert(message);
+    }
+    setLoading(false);
+  }
+
+  async function signInWithGoogle() {
+    setLoading(true);
+    try {
+      await loginWithOAuth('google');
+      router.replace('/(tabs)');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Google login failed';
       alert(message);
     }
     setLoading(false);
@@ -44,6 +56,16 @@ export default function LoginScreen() {
         onPress={signInWithEmail}
         disabled={loading}
       />
+
+      <View style={styles.socialSection}>
+        <TouchableOpacity
+          style={[styles.socialButton, loading && styles.socialButtonDisabled]}
+          onPress={signInWithGoogle}
+          disabled={loading}
+        >
+          <Text style={styles.socialButtonText}>Continue with Google</Text>
+        </TouchableOpacity>
+      </View>
       
       <View style={styles.footer}>
         <Text>Don&apos;t have an account? </Text>
@@ -81,6 +103,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 20,
+  },
+  socialSection: {
+    marginTop: 12,
+  },
+  socialButton: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  socialButtonDisabled: {
+    opacity: 0.6,
+  },
+  socialButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#222',
   },
   link: {
     color: '#0066cc',

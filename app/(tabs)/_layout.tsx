@@ -16,6 +16,7 @@ const iconMap = {
   log: { active: 'plus-circle', inactive: 'plus-circle-outline' },
   progress: { active: 'chart-line', inactive: 'chart-line-variant' },
   community: { active: 'forum', inactive: 'forum-outline' },
+  settings: { active: 'cog', inactive: 'cog-outline' },
 } as const;
 
 export default function TabLayout() {
@@ -112,6 +113,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <MaterialCommunityIcons
               name={iconMap.community[focused ? 'active' : 'inactive']}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarActiveBackgroundColor: TAB_COLORS.activeBackground,
+          tabBarIcon: ({ color, size, focused }) => (
+            <MaterialCommunityIcons
+              name={iconMap.settings[focused ? 'active' : 'inactive']}
               color={color}
               size={size}
             />

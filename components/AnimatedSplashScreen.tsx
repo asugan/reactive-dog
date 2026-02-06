@@ -36,7 +36,7 @@ export function AnimatedSplashScreen({ start, onComplete }: AnimatedSplashScreen
       <View style={styles.logoContainer}>
         <View style={styles.logoCircle}>
           <View style={styles.logoMask}>
-            <Image source={require('../assets/foreground.png')} style={styles.logoImage} resizeMode="cover" />
+            <Image source={require('../assets/foreground.png')} style={styles.logoImage} contentFit="cover" />
           </View>
         </View>
       </View>

@@ -1,9 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as WebBrowser from 'expo-web-browser';
 import PocketBase, { AuthModel } from 'pocketbase';
+import EventSource from 'react-native-sse';
 
 const pocketbaseUrl = process.env.EXPO_PUBLIC_POCKETBASE_URL!;
 
 export const pb = new PocketBase(pocketbaseUrl);
+
+if (typeof global.EventSource === 'undefined') {
+  global.EventSource = EventSource as unknown as typeof global.EventSource;
+}
+
+WebBrowser.maybeCompleteAuthSession();
 
 let initializePromise: Promise<void> | null = null;
 
@@ -38,6 +46,18 @@ export const initializePocketBase = async () => {
 
 export const loginWithEmail = async (email: string, password: string) => {
   return await pb.collection('users').authWithPassword(email, password);
+};
+
+export const loginWithOAuth = async (provider: string) => {
+  return await pb.collection('users').authWithOAuth2({
+    provider,
+    urlCallback: async (authUrl) => {
+      await WebBrowser.openAuthSessionAsync(
+        authUrl.toString(),
+        `${pocketbaseUrl}/api/oauth2-redirect`
+      );
+    },
+  });
 };
 
 export const signUpWithEmail = async (email: string, password: string, passwordConfirm: string, userData?: Record<string, unknown>) => {
