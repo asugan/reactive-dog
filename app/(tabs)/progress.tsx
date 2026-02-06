@@ -718,7 +718,7 @@ export default function ProgressScreen() {
                     })}
                   </Text>
                 </View>
-                {log.distance_meters && (
+                {log.distance_meters !== null && log.distance_meters !== undefined && (
                   <Text style={styles.recentDistance}>{log.distance_meters}m</Text>
                 )}
               </View>
