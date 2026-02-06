@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthModel, RecordModel } from "pocketbase";
@@ -59,7 +59,6 @@ export default function ProgressScreen() {
     lastWeekCount: 0,
   });
   const [timeRange, setTimeRange] = useState<'7days' | '30days' | '90days'>('7days');
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [mapRegion, setMapRegion] = useState({
@@ -69,9 +68,31 @@ export default function ProgressScreen() {
     longitudeDelta: 0.0421,
   });
 
+  const fetchLogs = useCallback(async () => {
+    try {
+      const user = getCurrentUser();
+      if (!user) return;
+
+      const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+
+      const records = await pb.collection('trigger_logs').getFullList({
+        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
+        sort: 'logged_at',
+        requestKey: null,
+      });
+
+      setLogs(records as unknown as TriggerLog[]);
+      calculateStats(records as unknown as TriggerLog[]);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    }
+  }, [timeRange]);
+
   useEffect(() => {
     fetchLogs();
-  }, [timeRange]);
+  }, [fetchLogs]);
 
   // Calculate map region when logs change
   useEffect(() => {
@@ -99,31 +120,6 @@ export default function ProgressScreen() {
       });
     }
   }, [logs]);
-
-  const fetchLogs = async () => {
-    try {
-      setLoading(true);
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
-
-      const records = await pb.collection('trigger_logs').getFullList({
-        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
-        sort: 'logged_at',
-        requestKey: null,
-      });
-
-      setLogs(records as unknown as TriggerLog[]);
-      calculateStats(records as unknown as TriggerLog[]);
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const calculateStats = (logs: TriggerLog[]) => {
     if (logs.length === 0) {
@@ -436,7 +432,7 @@ export default function ProgressScreen() {
           <View style={styles.headerTop}>
             <View>
               <Text style={styles.title}>Progress</Text>
-              <Text style={styles.subtitle}>Track your dog's improvement over time</Text>
+              <Text style={styles.subtitle}>Track your dog&apos;s improvement over time</Text>
             </View>
             <View style={styles.headerButtons}>
               <TouchableOpacity

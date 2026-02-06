@@ -55,7 +55,7 @@ export default function ActiveWalkScreen() {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [isActive]);
+  }, [isActive, pulseAnim]);
 
   // Fetch dog profile
   useEffect(() => {

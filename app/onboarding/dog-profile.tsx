@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Switch } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { pb, getCurrentUser, initializePocketBase } from '../../lib/pocketbase';
+import { pb, initializePocketBase } from '../../lib/pocketbase';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dogs (off-leash)', emoji: '🐕' },
@@ -133,9 +133,9 @@ export default function DogProfileScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Reactivity Level</Text>
-            <Text style={styles.helperText}>
-              How intense are your dog's reactions? (1 = mild, 5 = severe)
-            </Text>
+              <Text style={styles.helperText}>
+              How intense are your dog&apos;s reactions? (1 = mild, 5 = severe)
+              </Text>
             <View style={styles.levelContainer}>
               {[1, 2, 3, 4, 5].map((level) => (
                 <TouchableOpacity

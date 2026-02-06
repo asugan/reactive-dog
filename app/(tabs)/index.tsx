@@ -248,7 +248,7 @@ export default function Dashboard() {
         <View style={styles.quoteCard}>
           <MaterialCommunityIcons name="format-quote-open" size={24} color="#7C3AED" />
           <Text style={styles.quoteText}>
-            "Progress, not perfection. Every walk is a step forward."
+            &ldquo;Progress, not perfection. Every walk is a step forward.&rdquo;
           </Text>
         </View>
       </ScrollView>

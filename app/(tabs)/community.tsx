@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -10,11 +10,15 @@ import {
   RefreshControl,
   Alert,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import MapView, { Marker } from 'react-native-maps';
 
 interface CommunityPost {
   id: string;
@@ -30,6 +34,49 @@ interface CommunityPost {
     };
   };
 }
+
+interface OwnerLocation {
+  id: string;
+  owner_id: string;
+  latitude: number;
+  longitude: number;
+  is_visible: boolean;
+  updated: string;
+}
+
+type RadiusFilter = 'all' | 5 | 10 | 20;
+
+interface CoordinatePoint {
+  latitude: number;
+  longitude: number;
+}
+
+const DEFAULT_MAP_REGION = {
+  latitude: 39.9334,
+  longitude: 32.8597,
+  latitudeDelta: 0.25,
+  longitudeDelta: 0.2,
+};
+
+const LOCATION_PRECISION = 3;
+const LOCATION_PRECISION_METERS = 110;
+const EARTH_RADIUS_KM = 6371;
+
+const toRad = (value: number) => {
+  return (value * Math.PI) / 180;
+};
+
+const distanceKmBetween = (from: CoordinatePoint, to: CoordinatePoint) => {
+  const dLat = toRad(to.latitude - from.latitude);
+  const dLng = toRad(to.longitude - from.longitude);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(from.latitude)) * Math.cos(toRad(to.latitude)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
+};
 
 const POST_TYPE_CONFIG = {
   general: { 
@@ -58,7 +105,7 @@ const POST_TYPE_CONFIG = {
   },
 };
 
-const FILTER_OPTIONS: Array<'all' | 'win_of_the_day' | 'question' | 'success_story'> = [
+const FILTER_OPTIONS: ('all' | 'win_of_the_day' | 'question' | 'success_story')[] = [
   'all', 'win_of_the_day', 'question', 'success_story'
 ];
 
@@ -73,11 +120,23 @@ export default function CommunityScreen() {
   const [newPostType, setNewPostType] = useState<'general' | 'win_of_the_day' | 'question' | 'success_story'>('general');
   const [submitting, setSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [localMapVisible, setLocalMapVisible] = useState(false);
+  const [locationSharingEnabled, setLocationSharingEnabled] = useState(false);
+  const [loadingLocationStatus, setLoadingLocationStatus] = useState(true);
+  const [updatingLocationShare, setUpdatingLocationShare] = useState(false);
+  const [nearbyOwners, setNearbyOwners] = useState<OwnerLocation[]>([]);
+  const [loadingNearbyOwners, setLoadingNearbyOwners] = useState(false);
+  const [ownerMapRegion, setOwnerMapRegion] = useState(DEFAULT_MAP_REGION);
+  const [radiusFilter, setRadiusFilter] = useState<RadiusFilter>('all');
+  const [myLocationPoint, setMyLocationPoint] = useState<CoordinatePoint | null>(null);
 
   useEffect(() => {
     fetchUserId();
-    fetchPosts();
-  }, [activeFilter]);
+  }, []);
+
+  useEffect(() => {
+    fetchLocationSharingStatus();
+  }, []);
 
   const fetchUserId = async () => {
     try {
@@ -88,7 +147,254 @@ export default function CommunityScreen() {
     }
   };
 
-  const fetchPosts = async () => {
+  const roundCoordinate = (value: number) => {
+    return Number(value.toFixed(LOCATION_PRECISION));
+  };
+
+  const formatDistance = (distanceKm: number | null) => {
+    if (distanceKm === null) {
+      return '-';
+    }
+
+    if (distanceKm < 1) {
+      return `${Math.round(distanceKm * 1000)} m`;
+    }
+
+    return `${distanceKm.toFixed(1)} km`;
+  };
+
+  const getOwnerAlias = (ownerId: string) => {
+    const adjectives = ['Brave', 'Calm', 'Patient', 'Dedicated', 'Caring', 'Steady', 'Gentle', 'Wise'];
+    const animals = ['Retriever', 'Shepherd', 'Hound', 'Terrier', 'Collie', 'Poodle', 'Bulldog', 'Spaniel'];
+    let hash = 0;
+
+    for (let i = 0; i < ownerId.length; i++) {
+      hash = ((hash << 5) - hash) + ownerId.charCodeAt(i);
+      hash = hash & hash;
+    }
+
+    const adjIndex = Math.abs(hash) % adjectives.length;
+    const animalIndex = Math.abs(hash >> 8) % animals.length;
+
+    return `${adjectives[adjIndex]} ${animals[animalIndex]}`;
+  };
+
+  const updateMapRegion = (owners: OwnerLocation[]) => {
+    if (owners.length === 0) {
+      return;
+    }
+
+    const latitudes = owners.map(owner => owner.latitude);
+    const longitudes = owners.map(owner => owner.longitude);
+
+    const minLat = Math.min(...latitudes);
+    const maxLat = Math.max(...latitudes);
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+
+    setOwnerMapRegion({
+      latitude: centerLat,
+      longitude: centerLng,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.8, 0.03),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.8, 0.03),
+    });
+  };
+
+  const fetchLocationSharingStatus = async () => {
+    try {
+      setLoadingLocationStatus(true);
+      const user = getCurrentUser();
+
+      if (!user) {
+        setLocationSharingEnabled(false);
+        return;
+      }
+
+      const record = await pb.collection('community_owner_locations').getFirstListItem(
+        `owner_id = "${user.id}"`,
+        { requestKey: null }
+      );
+
+      setLocationSharingEnabled(Boolean(record.is_visible));
+    } catch (error: any) {
+      if (error?.status !== 404) {
+        console.error('Error fetching location sharing status:', error);
+      }
+      setLocationSharingEnabled(false);
+    } finally {
+      setLoadingLocationStatus(false);
+    }
+  };
+
+  const fetchNearbyOwners = async () => {
+    try {
+      setLoadingNearbyOwners(true);
+      const user = getCurrentUser();
+
+      if (!user) {
+        setNearbyOwners([]);
+        return;
+      }
+
+      const records = await pb.collection('community_owner_locations').getFullList({
+        filter: 'is_visible = true',
+        sort: '-updated',
+        requestKey: null,
+      });
+
+      try {
+        const ownRecord = await pb.collection('community_owner_locations').getFirstListItem(
+          `owner_id = "${user.id}"`,
+          { requestKey: null }
+        ) as unknown as OwnerLocation;
+
+        setMyLocationPoint({
+          latitude: ownRecord.latitude,
+          longitude: ownRecord.longitude,
+        });
+      } catch {
+        setMyLocationPoint(null);
+      }
+
+      const owners = (records as unknown as OwnerLocation[]).filter(owner => owner.owner_id !== user.id);
+      setNearbyOwners(owners);
+      updateMapRegion(owners);
+    } catch (error: any) {
+      if (error?.status !== 404) {
+        console.error('Error fetching nearby owners:', error);
+      }
+      setNearbyOwners([]);
+    } finally {
+      setLoadingNearbyOwners(false);
+    }
+  };
+
+  const upsertLocationShare = async (enabled: boolean) => {
+    try {
+      setUpdatingLocationShare(true);
+      const user = getCurrentUser();
+
+      if (!user) {
+        Alert.alert('Login required', 'Please log in again to update your map visibility.');
+        return;
+      }
+
+      let existingRecord: OwnerLocation | null = null;
+
+      try {
+        existingRecord = await pb.collection('community_owner_locations').getFirstListItem(
+          `owner_id = "${user.id}"`,
+          { requestKey: null }
+        ) as unknown as OwnerLocation;
+      } catch (error: any) {
+        if (error?.status !== 404) {
+          throw error;
+        }
+      }
+
+      if (!enabled) {
+        if (existingRecord) {
+          await pb.collection('community_owner_locations').update(existingRecord.id, {
+            is_visible: false,
+          });
+        }
+        setLocationSharingEnabled(false);
+        return;
+      }
+
+      const permissionResult = await Location.requestForegroundPermissionsAsync();
+      if (permissionResult.status !== 'granted') {
+        Alert.alert(
+          'Location permission needed',
+          'To appear on the local owner map, please allow location access.'
+        );
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const latitude = roundCoordinate(position.coords.latitude);
+      const longitude = roundCoordinate(position.coords.longitude);
+
+      setMyLocationPoint({ latitude, longitude });
+
+      const payload = {
+        owner_id: user.id,
+        latitude,
+        longitude,
+        is_visible: true,
+        share_precision_m: LOCATION_PRECISION_METERS,
+      };
+
+      if (existingRecord) {
+        await pb.collection('community_owner_locations').update(existingRecord.id, payload);
+      } else {
+        await pb.collection('community_owner_locations').create(payload);
+      }
+
+      setLocationSharingEnabled(true);
+      await fetchNearbyOwners();
+    } catch (error: any) {
+      console.error('Error updating location sharing:', error);
+
+      if (error?.status === 404) {
+        Alert.alert(
+          'Setup needed',
+          'community_owner_locations collection is not available yet. Please import the updated PocketBase schema.'
+        );
+      } else {
+        Alert.alert('Update failed', 'Could not update map visibility. Please try again.');
+      }
+    } finally {
+      setUpdatingLocationShare(false);
+    }
+  };
+
+  const openLocalMap = async () => {
+    setLocalMapVisible(true);
+    await fetchNearbyOwners();
+  };
+
+  const nearbyOwnersWithDistance = useMemo(() => {
+    return nearbyOwners.map((owner) => {
+      const distanceKm = myLocationPoint
+        ? distanceKmBetween(myLocationPoint, { latitude: owner.latitude, longitude: owner.longitude })
+        : null;
+
+      return {
+        ...owner,
+        distanceKm,
+      };
+    });
+  }, [nearbyOwners, myLocationPoint]);
+
+  const filteredNearbyOwners = useMemo(() => {
+    if (radiusFilter === 'all') {
+      return nearbyOwnersWithDistance;
+    }
+
+    return nearbyOwnersWithDistance.filter((owner) => owner.distanceKm !== null && owner.distanceKm <= radiusFilter);
+  }, [nearbyOwnersWithDistance, radiusFilter]);
+
+  useEffect(() => {
+    const regionOwners = filteredNearbyOwners.map((owner) => ({
+      id: owner.id,
+      owner_id: owner.owner_id,
+      latitude: owner.latitude,
+      longitude: owner.longitude,
+      is_visible: owner.is_visible,
+      updated: owner.updated,
+    }));
+
+    updateMapRegion(regionOwners);
+  }, [filteredNearbyOwners]);
+
+  const fetchPosts = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -111,12 +417,16 @@ export default function CommunityScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [activeFilter]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchPosts();
-  }, [activeFilter]);
+  }, [fetchPosts]);
 
   const handleCreatePost = async () => {
     if (!newPostTitle.trim() || !newPostContent.trim()) {
@@ -288,11 +598,40 @@ export default function CommunityScreen() {
             Connect with other reactive dog owners
           </Text>
         </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.mapOpenButton}
+            onPress={openLocalMap}
+          >
+            <MaterialCommunityIcons name="map-marker-radius" size={20} color="#1D4ED8" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.newPostButton}
+            onPress={() => setModalVisible(true)}
+          >
+            <MaterialCommunityIcons name="plus" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.localMapCard}>
+        <View style={styles.localMapCardTop}>
+          <View style={styles.localMapCardIconWrap}>
+            <MaterialCommunityIcons name="map-marker-account-outline" size={20} color="#1D4ED8" />
+          </View>
+          <View style={styles.localMapCardTextWrap}>
+            <Text style={styles.localMapCardTitle}>Local owner map (opt-in)</Text>
+            <Text style={styles.localMapCardSubtitle}>
+              Share an approximate location to find nearby reactive dog owners.
+            </Text>
+          </View>
+        </View>
         <TouchableOpacity
-          style={styles.newPostButton}
-          onPress={() => setModalVisible(true)}
+          style={styles.localMapOpenCta}
+          onPress={openLocalMap}
         >
-          <MaterialCommunityIcons name="plus" size={24} color="#fff" />
+          <Text style={styles.localMapOpenCtaText}>Open map</Text>
+          <MaterialCommunityIcons name="chevron-right" size={18} color="#1D4ED8" />
         </TouchableOpacity>
       </View>
 
@@ -338,6 +677,135 @@ export default function CommunityScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={localMapVisible}
+        onRequestClose={() => setLocalMapVisible(false)}
+      >
+        <View style={styles.mapModalOverlay}>
+          <View style={styles.mapModalContent}>
+            <View style={styles.mapModalHeader}>
+              <View>
+                <Text style={styles.mapModalTitle}>Local Owner Map</Text>
+                <Text style={styles.mapModalSubtitle}>Approximate locations only (about 110m precision)</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setLocalMapVisible(false)}
+                style={styles.closeButton}
+              >
+                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.mapShareRow}>
+              <View style={styles.mapShareTextWrap}>
+                <Text style={styles.mapShareTitle}>Share my location</Text>
+                <Text style={styles.mapShareSubtitle}>
+                  Turn on to appear for other owners nearby.
+                </Text>
+              </View>
+              {loadingLocationStatus || updatingLocationShare ? (
+                <ActivityIndicator size="small" color="#1D4ED8" />
+              ) : (
+                <Switch
+                  value={locationSharingEnabled}
+                  onValueChange={upsertLocationShare}
+                  trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
+                  thumbColor={locationSharingEnabled ? '#1D4ED8' : '#F3F4F6'}
+                />
+              )}
+            </View>
+
+            <View style={styles.privacyNote}>
+              <MaterialCommunityIcons name="shield-check-outline" size={16} color="#0369A1" />
+              <Text style={styles.privacyNoteText}>
+                Your exact address is never shared. Only approximate area is shown.
+              </Text>
+            </View>
+
+            <View style={styles.radiusRow}>
+              <Text style={styles.radiusRowLabel}>Radius</Text>
+              <View style={styles.radiusButtonsWrap}>
+                {(['all', 5, 10, 20] as RadiusFilter[]).map((radius) => {
+                  const isActive = radiusFilter === radius;
+                  const label = radius === 'all' ? 'All' : `${radius} km`;
+
+                  return (
+                    <TouchableOpacity
+                      key={String(radius)}
+                      style={[styles.radiusButton, isActive && styles.radiusButtonActive]}
+                      onPress={() => setRadiusFilter(radius)}
+                    >
+                      <Text style={[styles.radiusButtonText, isActive && styles.radiusButtonTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {radiusFilter !== 'all' && !myLocationPoint && (
+              <View style={styles.radiusHintBox}>
+                <MaterialCommunityIcons name="information-outline" size={15} color="#92400E" />
+                <Text style={styles.radiusHintText}>
+                  Enable location sharing once to use km radius filtering.
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.ownerMapWrap}>
+              <MapView
+                style={styles.ownerMap}
+                region={ownerMapRegion}
+                onRegionChangeComplete={setOwnerMapRegion}
+              >
+                {filteredNearbyOwners.map((owner) => (
+                  <Marker
+                    key={owner.id}
+                    coordinate={{
+                      latitude: owner.latitude,
+                      longitude: owner.longitude,
+                    }}
+                    pinColor="#2563EB"
+                    title={getOwnerAlias(owner.owner_id)}
+                    description={`Approx. ${formatDistance(owner.distanceKm)}`}
+                  />
+                ))}
+              </MapView>
+              {(loadingNearbyOwners || updatingLocationShare) && (
+                <View style={styles.mapLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#1D4ED8" />
+                </View>
+              )}
+            </View>
+
+            {filteredNearbyOwners.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.distanceBadgesWrap}
+              >
+                {filteredNearbyOwners.slice(0, 20).map((owner) => (
+                  <View key={owner.id} style={styles.distanceBadge}>
+                    <MaterialCommunityIcons name="map-marker-outline" size={14} color="#1D4ED8" />
+                    <Text style={styles.distanceBadgeName}>{getOwnerAlias(owner.owner_id)}</Text>
+                    <Text style={styles.distanceBadgeValue}>{formatDistance(owner.distanceKm)}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.mapFooterRow}>
+              <Text style={styles.mapFooterText}>{filteredNearbyOwners.length} owner(s) nearby</Text>
+              <TouchableOpacity onPress={fetchNearbyOwners} style={styles.refreshNearbyButton}>
+                <MaterialCommunityIcons name="refresh" size={16} color="#1D4ED8" />
+                <Text style={styles.refreshNearbyText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Create Post Modal */}
       <Modal
@@ -474,6 +942,18 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 4,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  mapOpenButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: '#DBEAFE',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   newPostButton: {
     width: 48,
     height: 48,
@@ -486,6 +966,58 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  localMapCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    gap: 12,
+  },
+  localMapCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  localMapCardIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  localMapCardTextWrap: {
+    flex: 1,
+  },
+  localMapCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  localMapCardSubtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    color: '#1D4ED8',
+    lineHeight: 18,
+  },
+  localMapOpenCta: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#DBEAFE',
+  },
+  localMapOpenCtaText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
   filterContainer: {
     maxHeight: 50,
@@ -632,6 +1164,205 @@ const styles = StyleSheet.create({
   },
   likeCountActive: {
     color: '#EF4444',
+  },
+  mapModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  mapModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '88%',
+    paddingBottom: 18,
+  },
+  mapModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  mapModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  mapModalSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  mapShareRow: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  mapShareTextWrap: {
+    flex: 1,
+  },
+  mapShareTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  mapShareSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  privacyNote: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#E0F2FE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  privacyNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#075985',
+    lineHeight: 16,
+  },
+  radiusRow: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  radiusRowLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  radiusButtonsWrap: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  radiusButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  radiusButtonActive: {
+    backgroundColor: '#1D4ED8',
+    borderColor: '#1D4ED8',
+  },
+  radiusButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  radiusButtonTextActive: {
+    color: '#fff',
+  },
+  radiusHintBox: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radiusHintText: {
+    fontSize: 12,
+    color: '#92400E',
+    flex: 1,
+  },
+  ownerMapWrap: {
+    marginHorizontal: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    flex: 1,
+    minHeight: 260,
+  },
+  ownerMap: {
+    flex: 1,
+  },
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+  },
+  distanceBadgesWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  distanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  distanceBadgeName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  distanceBadgeValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  mapFooterRow: {
+    marginTop: 14,
+    marginHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mapFooterText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  refreshNearbyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  refreshNearbyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
   modalOverlay: {
     flex: 1,

@@ -77,7 +77,10 @@ Reactive dog owners face:
 ✅ Success stories library
 ✅ Anonymous display with auto-generated names
 ✅ Like system for engagement
-⏳ Opt-in local owner map (for meetups)
+✅ Opt-in local owner map (for meetups) with:
+   - Privacy-first opt-in toggle (off by default)
+   - Approximate-only location sharing (rounded coordinates)
+   - Nearby owner visualization on interactive map
 ⏳ Expert Q&A sessions (behaviorist AMAs)
 ```
 

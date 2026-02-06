@@ -135,6 +135,7 @@ npx expo start
   - Anonymous posting (auto-generated names)
   - Like system
   - Filter by post type
+  - Opt-in local owner map (privacy-first approximate locations)
 - ✅ PDF export for behaviorists - Professional reports with:
   - Dog profile summary
   - Reaction statistics and trends

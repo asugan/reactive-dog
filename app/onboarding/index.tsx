@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,10 +12,10 @@ export default function WelcomeScreen() {
           <Text style={styles.icon}>🐕</Text>
         </View>
         
-        <Text style={styles.title}>You're not alone</Text>
+        <Text style={styles.title}>You&apos;re not alone</Text>
         
         <Text style={styles.subtitle}>
-          30% of dogs are reactive. We're here to help you and your dog thrive.
+          30% of dogs are reactive. We&apos;re here to help you and your dog thrive.
         </Text>
         
         <View style={styles.statsContainer}>

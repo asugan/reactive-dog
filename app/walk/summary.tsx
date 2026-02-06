@@ -106,7 +106,7 @@ export default function WalkSummaryScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>How did it go?</Text>
           <Text style={styles.sectionSubtitle}>
-            Rate your dog's overall performance
+            Rate your dog&apos;s overall performance
           </Text>
           <View style={styles.ratingContainer}>
             {[1, 2, 3, 4, 5].map((rating) => (

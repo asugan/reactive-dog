@@ -57,7 +57,7 @@ function useProtectedRoute() {
     });
 
     return () => unsubscribe();
-  }, [segments]);
+  }, [router, segments]);
 
   return isReady;
 }

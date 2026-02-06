@@ -234,7 +234,7 @@ export default function WalkSetupScreen() {
               />
               <View style={styles.checklistContent}>
                 <Text style={[styles.checklistLabel, checklist.calm && styles.checklistLabelChecked]}>
-                  You're calm and ready
+                  You&apos;re calm and ready
                 </Text>
                 <Text style={styles.checklistHint}>Dogs sense our energy</Text>
               </View>
