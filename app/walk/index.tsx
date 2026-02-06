@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TECHNIQUE_OPTIONS = [
   { 
@@ -41,6 +42,23 @@ interface DogProfile {
   training_method: string;
 }
 
+interface WeeklyPlan {
+  plannedDays: string[];
+  weeklyGoal: number;
+}
+
+const WEEK_DAYS = [
+  { key: 'Mon', label: 'Mon' },
+  { key: 'Tue', label: 'Tue' },
+  { key: 'Wed', label: 'Wed' },
+  { key: 'Thu', label: 'Thu' },
+  { key: 'Fri', label: 'Fri' },
+  { key: 'Sat', label: 'Sat' },
+  { key: 'Sun', label: 'Sun' },
+];
+
+const WEEKLY_GOAL_OPTIONS = [2, 3, 4, 5, 6, 7];
+
 export default function WalkSetupScreen() {
   const [dogProfile, setDogProfile] = useState<DogProfile | null>(null);
   const [distanceThreshold, setDistanceThreshold] = useState(15);
@@ -51,16 +69,37 @@ export default function WalkSetupScreen() {
     water: false,
     calm: false,
   });
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({
+    plannedDays: ['Mon', 'Wed', 'Fri'],
+    weeklyGoal: 3,
+  });
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchDogProfile();
+  const loadWeeklyPlan = useCallback(async (userId: string) => {
+    try {
+      const stored = await AsyncStorage.getItem(`bat_weekly_plan_${userId}`);
+      if (!stored) return;
+
+      const parsed = JSON.parse(stored) as WeeklyPlan;
+      if (Array.isArray(parsed.plannedDays) && typeof parsed.weeklyGoal === 'number') {
+        setWeeklyPlan({
+          plannedDays: parsed.plannedDays.filter((day) => WEEK_DAYS.some((weekDay) => weekDay.key === day)),
+          weeklyGoal: parsed.weeklyGoal,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading weekly BAT plan:', error);
+    }
   }, []);
 
-  const fetchDogProfile = async () => {
+  const fetchDogProfile = useCallback(async () => {
     try {
       const user = getCurrentUser();
       if (!user) return;
+
+      setOwnerId(user.id);
+      await loadWeeklyPlan(user.id);
 
       const records = await pb.collection('dog_profiles').getList(1, 1, {
         filter: `owner_id = "${user.id}"`,
@@ -80,6 +119,45 @@ export default function WalkSetupScreen() {
     } catch (error) {
       console.error('Error fetching dog profile:', error);
     }
+  }, [loadWeeklyPlan]);
+
+  useEffect(() => {
+    fetchDogProfile();
+  }, [fetchDogProfile]);
+
+  const saveWeeklyPlan = async (nextPlan: WeeklyPlan) => {
+    if (!ownerId) return;
+
+    try {
+      await AsyncStorage.setItem(`bat_weekly_plan_${ownerId}`, JSON.stringify(nextPlan));
+    } catch (error) {
+      console.error('Error saving weekly BAT plan:', error);
+    }
+  };
+
+  const togglePlannedDay = (dayKey: string) => {
+    const exists = weeklyPlan.plannedDays.includes(dayKey);
+    const updatedDays = exists
+      ? weeklyPlan.plannedDays.filter((day) => day !== dayKey)
+      : [...weeklyPlan.plannedDays, dayKey];
+
+    const nextPlan = {
+      ...weeklyPlan,
+      plannedDays: updatedDays,
+    };
+
+    setWeeklyPlan(nextPlan);
+    saveWeeklyPlan(nextPlan);
+  };
+
+  const setWeeklyGoal = (goal: number) => {
+    const nextPlan = {
+      ...weeklyPlan,
+      weeklyGoal: goal,
+    };
+
+    setWeeklyPlan(nextPlan);
+    saveWeeklyPlan(nextPlan);
   };
 
   const toggleChecklistItem = (item: keyof typeof checklist) => {
@@ -305,6 +383,52 @@ export default function WalkSetupScreen() {
           </View>
         </View>
 
+        {/* Weekly BAT Session Planner */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Weekly BAT Session Planner</Text>
+          <Text style={styles.sectionSubtitle}>
+            Choose your target days and weekly session goal
+          </Text>
+
+          <View style={styles.daysGrid}>
+            {WEEK_DAYS.map((day) => {
+              const isSelected = weeklyPlan.plannedDays.includes(day.key);
+              return (
+                <TouchableOpacity
+                  key={day.key}
+                  style={[styles.dayButton, isSelected && styles.dayButtonActive]}
+                  onPress={() => togglePlannedDay(day.key)}
+                >
+                  <Text style={[styles.dayButtonText, isSelected && styles.dayButtonTextActive]}>{day.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.goalLabel}>Weekly goal</Text>
+          <View style={styles.goalRow}>
+            {WEEKLY_GOAL_OPTIONS.map((goal) => {
+              const isSelected = weeklyPlan.weeklyGoal === goal;
+              return (
+                <TouchableOpacity
+                  key={goal}
+                  style={[styles.goalButton, isSelected && styles.goalButtonActive]}
+                  onPress={() => setWeeklyGoal(goal)}
+                >
+                  <Text style={[styles.goalButtonText, isSelected && styles.goalButtonTextActive]}>{goal}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.plannerHintCard}>
+            <MaterialCommunityIcons name="calendar-check" size={18} color="#2563EB" />
+            <Text style={styles.plannerHintText}>
+              Planned days: {weeklyPlan.plannedDays.length} • Goal: {weeklyPlan.weeklyGoal} session(s)
+            </Text>
+          </View>
+        </View>
+
         {/* Start Button */}
         <TouchableOpacity
           style={[styles.startButton, loading && styles.startButtonDisabled]}
@@ -464,6 +588,82 @@ const styles = StyleSheet.create({
   },
   techniquesGrid: {
     gap: 12,
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  dayButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#F9FAFB',
+  },
+  dayButtonActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#2563EB',
+  },
+  dayButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  dayButtonTextActive: {
+    color: '#1D4ED8',
+  },
+  goalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 10,
+  },
+  goalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  goalButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalButtonActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  goalButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  goalButtonTextActive: {
+    color: '#fff',
+  },
+  plannerHintCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  plannerHintText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1E3A8A',
+    fontWeight: '500',
   },
   techniqueCard: {
     flexDirection: 'row',

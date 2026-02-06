@@ -804,5 +804,206 @@
     "updateRule": "@request.auth.id != '' && owner_id = @request.auth.id",
     "deleteRule": "@request.auth.id != '' && owner_id = @request.auth.id",
     "options": {}
+  },
+  {
+    "id": "pb_expert_qa_sessions",
+    "name": "expert_qa_sessions",
+    "type": "base",
+    "system": false,
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text600000001",
+        "max": 0,
+        "min": 0,
+        "name": "expert_name",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": true,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text600000002",
+        "max": 0,
+        "min": 0,
+        "name": "credentials",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text600000003",
+        "max": 0,
+        "min": 0,
+        "name": "topic",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": true,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "convertURLs": false,
+        "hidden": false,
+        "id": "editor600000001",
+        "maxSize": 0,
+        "name": "description",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "editor"
+      },
+      {
+        "hidden": false,
+        "id": "date600000001",
+        "max": "",
+        "min": "",
+        "name": "scheduled_at",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "date"
+      },
+      {
+        "hidden": false,
+        "id": "number600000001",
+        "max": null,
+        "min": 1,
+        "name": "capacity",
+        "onlyInt": true,
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "bool600000001",
+        "name": "is_active",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "bool"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [],
+    "listRule": "@request.auth.id != '' && is_active = true",
+    "viewRule": "@request.auth.id != '' && is_active = true",
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
+    "options": {}
+  },
+  {
+    "id": "pb_expert_qa_rsvps",
+    "name": "expert_qa_rsvps",
+    "type": "base",
+    "system": false,
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "cascadeDelete": true,
+        "collectionId": "pb_expert_qa_sessions",
+        "hidden": false,
+        "id": "relation600000001",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "session_id",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": true,
+        "collectionId": "_pb_users_auth_",
+        "hidden": false,
+        "id": "relation600000002",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "owner_id",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_expert_qa_rsvps_session_owner ON expert_qa_rsvps (session_id, owner_id)"
+    ],
+    "listRule": "@request.auth.id != '' && session_id.is_active = true",
+    "viewRule": "@request.auth.id != '' && session_id.is_active = true",
+    "createRule": "@request.auth.id != '' && owner_id = @request.auth.id && session_id.is_active = true",
+    "updateRule": "@request.auth.id != '' && owner_id = @request.auth.id",
+    "deleteRule": "@request.auth.id != '' && owner_id = @request.auth.id",
+    "options": {}
   }
 ]

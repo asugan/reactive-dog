@@ -114,6 +114,7 @@ npx expo start
   - Time range selector (7/30/90 days)
   - Line chart: Reactions over time
   - Bar chart: Triggers by type
+  - Good days vs bad days calendar heatmap (6-week view)
   - Stats cards: Total reactions, avg severity, week-over-week comparison
   - Recent activity list
   - **Interactive Trigger Map** - Visualize all reactive incidents on a map:
@@ -123,6 +124,7 @@ npx expo start
     - Tap pins for detailed info (type, severity, date)
 - ✅ **BAT Training Mode** - Full training walk experience with:
   - Pre-walk checklist (treats, equipment, mindset)
+  - Weekly BAT session planner (day selection + weekly goal)
   - Distance threshold configuration (5-50m alerts)
   - Active walk mode with GPS tracking & timer
   - Technique reminders (U-Turn, Find It, Look at That)
@@ -136,6 +138,7 @@ npx expo start
   - Like system
   - Filter by post type
   - Opt-in local owner map (privacy-first approximate locations)
+  - Expert Q&A session cards (behaviorist AMAs) with backend RSVP tracking
 - ✅ PDF export for behaviorists - Professional reports with:
   - Dog profile summary
   - Reaction statistics and trends
@@ -162,6 +165,9 @@ The app uses the following collections in PocketBase:
 - `trigger_logs` - Reaction logs with location, severity
 - `walks` - BAT session tracking
 - `community_posts` - Forum posts
+- `community_owner_locations` - Approximate local owner map points
+- `expert_qa_sessions` - AMA sessions created by admins
+- `expert_qa_rsvps` - User RSVPs for expert sessions
 
 ### API Rules
 

@@ -42,14 +42,14 @@ Reactive dog owners face:
 ✅ Quick trigger logging: 2-tap logging during walk
 ✅ Real-time stats: Duration, trigger count, location status
 ✅ Post-walk reflection: Success rating (1-5), technique used, notes
-⏳ Weekly BAT session planner
+✅ Weekly BAT session planner (day selection + weekly session goal)
 ```
 
 ### 3. Progress Analytics (✅ Implemented)
 ```
 ✅ Reaction frequency over time (line chart)
 ✅ Distance threshold improvements (via BAT walk mode)
-⏳ "Good days vs bad days" calendar heatmap
+✅ "Good days vs bad days" calendar heatmap (6-week visual trend)
 ✅ Trigger frequency by type (bar chart)
 ✅ Statistics cards:
    - Total reactions
@@ -81,7 +81,10 @@ Reactive dog owners face:
    - Privacy-first opt-in toggle (off by default)
    - Approximate-only location sharing (rounded coordinates)
    - Nearby owner visualization on interactive map
-⏳ Expert Q&A sessions (behaviorist AMAs)
+✅ Expert Q&A sessions (behaviorist AMAs) with:
+   - Upcoming session cards in community tab
+   - RSVP/Un-RSVP flow
+   - Backend persistence via PocketBase (sessions + RSVPs)
 ```
 
 ---

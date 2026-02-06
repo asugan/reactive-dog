@@ -29,6 +29,12 @@ interface Stats {
   lastWeekCount: number;
 }
 
+interface HeatmapDay {
+  dateKey: string;
+  count: number;
+  averageSeverity: number;
+}
+
 const TRIGGER_COLORS: { [key: string]: string } = {
   'Dog_OffLeash': '#EF4444',
   'Dog_OnLeash': '#F97316',
@@ -60,6 +66,7 @@ export default function ProgressScreen() {
   });
   const [timeRange, setTimeRange] = useState<'7days' | '30days' | '90days'>('7days');
   const [exporting, setExporting] = useState(false);
+  const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([]);
   const [showMap, setShowMap] = useState(false);
   const [mapRegion, setMapRegion] = useState({
     latitude: 39.9334,
@@ -85,10 +92,56 @@ export default function ProgressScreen() {
 
       setLogs(records as unknown as TriggerLog[]);
       calculateStats(records as unknown as TriggerLog[]);
+      await fetchHeatmapLogs(user.id);
     } catch (error) {
       console.error('Error fetching logs:', error);
     }
   }, [timeRange]);
+
+  const fetchHeatmapLogs = async (ownerId: string) => {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 41);
+
+      const records = await pb.collection('trigger_logs').getFullList({
+        filter: `owner_id = "${ownerId}" && logged_at >= "${cutoffDate.toISOString()}"`,
+        sort: 'logged_at',
+        requestKey: null,
+      });
+
+      const byDay = new Map<string, { count: number; severitySum: number }>();
+
+      (records as unknown as TriggerLog[]).forEach((record) => {
+        const key = record.logged_at.split('T')[0];
+        const current = byDay.get(key) ?? { count: 0, severitySum: 0 };
+        byDay.set(key, {
+          count: current.count + 1,
+          severitySum: current.severitySum + record.severity,
+        });
+      });
+
+      const days: HeatmapDay[] = [];
+      for (let i = 41; i >= 0; i--) {
+        const day = new Date();
+        day.setDate(day.getDate() - i);
+        const key = day.toISOString().split('T')[0];
+        const aggregate = byDay.get(key);
+        const count = aggregate?.count ?? 0;
+        const averageSeverity = count > 0 ? aggregate!.severitySum / count : 0;
+
+        days.push({
+          dateKey: key,
+          count,
+          averageSeverity,
+        });
+      }
+
+      setHeatmapDays(days);
+    } catch (error) {
+      console.error('Error fetching heatmap logs:', error);
+      setHeatmapDays([]);
+    }
+  };
 
   useEffect(() => {
     fetchLogs();
@@ -234,6 +287,25 @@ export default function ProgressScreen() {
     if (severity === 3) return '#F59E0B';
     return '#EF4444';
   };
+
+  const getHeatmapColor = (day: HeatmapDay) => {
+    if (day.count === 0) return '#D1FAE5';
+    if (day.count <= 1 && day.averageSeverity <= 2) return '#86EFAC';
+    if (day.count <= 2 && day.averageSeverity <= 3.2) return '#FCD34D';
+    return '#FCA5A5';
+  };
+
+  const getHeatmapLabel = (day: HeatmapDay) => {
+    if (day.count === 0) return 'Good day (no reactions)';
+    if (day.count <= 1 && day.averageSeverity <= 2) return 'Good day';
+    if (day.count <= 2 && day.averageSeverity <= 3.2) return 'Mixed day';
+    return 'Challenging day';
+  };
+
+  const heatmapWeeks = [] as HeatmapDay[][];
+  for (let i = 0; i < heatmapDays.length; i += 7) {
+    heatmapWeeks.push(heatmapDays.slice(i, i + 7));
+  }
 
   const generateReport = async () => {
     try {
@@ -577,6 +649,52 @@ export default function ProgressScreen() {
           )}
         </View>
 
+        {/* Good vs Bad Days Heatmap */}
+        <View style={styles.chartSection}>
+          <Text style={styles.chartTitle}>Good Days vs Bad Days</Text>
+          {heatmapDays.length > 0 ? (
+            <View style={styles.heatmapCard}>
+              <Text style={styles.heatmapSubtitle}>Last 6 weeks</Text>
+              <View style={styles.heatmapGrid}>
+                {heatmapWeeks.map((week, weekIndex) => (
+                  <View key={`week-${weekIndex}`} style={styles.heatmapWeekColumn}>
+                    {week.map((day) => (
+                      <View
+                        key={day.dateKey}
+                        style={[styles.heatmapCell, { backgroundColor: getHeatmapColor(day) }]}
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.heatmapLegend}>
+                <View style={styles.heatmapLegendItem}>
+                  <View style={[styles.heatmapLegendDot, { backgroundColor: '#D1FAE5' }]} />
+                  <Text style={styles.heatmapLegendText}>Good</Text>
+                </View>
+                <View style={styles.heatmapLegendItem}>
+                  <View style={[styles.heatmapLegendDot, { backgroundColor: '#FCD34D' }]} />
+                  <Text style={styles.heatmapLegendText}>Mixed</Text>
+                </View>
+                <View style={styles.heatmapLegendItem}>
+                  <View style={[styles.heatmapLegendDot, { backgroundColor: '#FCA5A5' }]} />
+                  <Text style={styles.heatmapLegendText}>Challenging</Text>
+                </View>
+              </View>
+
+              <Text style={styles.heatmapHintText}>
+                Today: {getHeatmapLabel(heatmapDays[heatmapDays.length - 1])}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.emptyChart}>
+              <MaterialCommunityIcons name="calendar-month-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.emptyChartText}>No heatmap data yet</Text>
+            </View>
+          )}
+        </View>
+
         {/* Recent Activity */}
         {logs.length > 0 && (
           <View style={styles.recentSection}>
@@ -799,6 +917,57 @@ const styles = StyleSheet.create({
   },
   chart: {
     borderRadius: 16,
+  },
+  heatmapCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+  },
+  heatmapSubtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  heatmapGrid: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 14,
+  },
+  heatmapWeekColumn: {
+    gap: 6,
+  },
+  heatmapCell: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+  },
+  heatmapLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 8,
+  },
+  heatmapLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heatmapLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  heatmapLegendText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  heatmapHintText: {
+    fontSize: 12,
+    color: '#64748B',
   },
   emptyChart: {
     height: 200,

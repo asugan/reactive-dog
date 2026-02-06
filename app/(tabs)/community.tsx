@@ -44,6 +44,16 @@ interface OwnerLocation {
   updated: string;
 }
 
+interface ExpertSession {
+  id: string;
+  expert_name: string;
+  credentials: string;
+  topic: string;
+  description: string;
+  scheduled_at: string;
+  capacity: number;
+}
+
 type RadiusFilter = 'all' | 5 | 10 | 20;
 
 interface CoordinatePoint {
@@ -109,6 +119,43 @@ const FILTER_OPTIONS: ('all' | 'win_of_the_day' | 'question' | 'success_story')[
   'all', 'win_of_the_day', 'question', 'success_story'
 ];
 
+const buildUpcomingDate = (daysFromNow: number, hour: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(hour, 0, 0, 0);
+  return date.toISOString();
+};
+
+const FALLBACK_EXPERT_SESSIONS: ExpertSession[] = [
+  {
+    id: 'ama-thresholds',
+    expert_name: 'Dr. Elif Arman',
+    credentials: 'DACVB',
+    topic: 'Threshold Management in Busy Areas',
+    description: 'Ask anything about distance, recovery windows, and reading early stress signals.',
+    scheduled_at: buildUpcomingDate(3, 19),
+    capacity: 80,
+  },
+  {
+    id: 'ama-patterns',
+    expert_name: 'Merve Tan',
+    credentials: 'IAABC-CDBC',
+    topic: 'Pattern Games for Reactive Walks',
+    description: 'Live AMA focused on practical BAT/LAT pattern games for real city walks.',
+    scheduled_at: buildUpcomingDate(7, 20),
+    capacity: 100,
+  },
+  {
+    id: 'ama-recovery',
+    expert_name: 'Arda Aksoy',
+    credentials: 'CCPDT-KA',
+    topic: 'After-Reaction Recovery Routines',
+    description: 'How to reset after a rough encounter and prevent trigger stacking for the rest of the day.',
+    scheduled_at: buildUpcomingDate(12, 19),
+    capacity: 60,
+  },
+];
+
 export default function CommunityScreen() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +176,10 @@ export default function CommunityScreen() {
   const [ownerMapRegion, setOwnerMapRegion] = useState(DEFAULT_MAP_REGION);
   const [radiusFilter, setRadiusFilter] = useState<RadiusFilter>('all');
   const [myLocationPoint, setMyLocationPoint] = useState<CoordinatePoint | null>(null);
+  const [expertSessions, setExpertSessions] = useState<ExpertSession[]>([]);
+  const [loadingExpertSessions, setLoadingExpertSessions] = useState(true);
+  const [rsvpSessionIds, setRsvpSessionIds] = useState<string[]>([]);
+  const [sessionRsvpCounts, setSessionRsvpCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchUserId();
@@ -145,6 +196,134 @@ export default function CommunityScreen() {
     } catch (error) {
       console.error('Error fetching user:', error);
     }
+  };
+
+  const fetchSessionRsvps = useCallback(async (sessions: ExpertSession[]) => {
+    try {
+      if (sessions.length === 0) {
+        setSessionRsvpCounts({});
+        setRsvpSessionIds([]);
+        return;
+      }
+
+      const user = getCurrentUser();
+      const sessionsFilter = sessions.map((session) => `session_id = "${session.id}"`).join(' || ');
+
+      const records = await pb.collection('expert_qa_rsvps').getFullList({
+        filter: sessionsFilter,
+        requestKey: null,
+      });
+
+      const counts: Record<string, number> = {};
+      const userRsvpIds: string[] = [];
+
+      (records as unknown as { session_id: string; owner_id: string }[]).forEach((record) => {
+        counts[record.session_id] = (counts[record.session_id] || 0) + 1;
+        if (user && record.owner_id === user.id) {
+          userRsvpIds.push(record.session_id);
+        }
+      });
+
+      setSessionRsvpCounts(counts);
+      setRsvpSessionIds(userRsvpIds);
+    } catch (error: any) {
+      if (error?.status !== 404) {
+        console.error('Error fetching expert RSVP records:', error);
+      }
+      setSessionRsvpCounts({});
+      setRsvpSessionIds([]);
+    }
+  }, []);
+
+  const fetchExpertSessions = useCallback(async () => {
+    try {
+      setLoadingExpertSessions(true);
+      const nowIso = new Date().toISOString();
+      const result = await pb.collection('expert_qa_sessions').getList(1, 10, {
+        filter: `scheduled_at >= "${nowIso}" && is_active = true`,
+        sort: 'scheduled_at',
+        requestKey: null,
+      });
+
+      let nextSessions: ExpertSession[] = [];
+      if (result.items.length > 0) {
+        nextSessions = result.items as unknown as ExpertSession[];
+      } else {
+        nextSessions = FALLBACK_EXPERT_SESSIONS;
+      }
+
+      setExpertSessions(nextSessions);
+      await fetchSessionRsvps(nextSessions);
+    } catch {
+      setExpertSessions(FALLBACK_EXPERT_SESSIONS);
+      await fetchSessionRsvps(FALLBACK_EXPERT_SESSIONS);
+    } finally {
+      setLoadingExpertSessions(false);
+    }
+  }, [fetchSessionRsvps]);
+
+  useEffect(() => {
+    fetchExpertSessions();
+  }, [fetchExpertSessions]);
+
+  useEffect(() => {
+    if (expertSessions.length > 0) {
+      fetchSessionRsvps(expertSessions);
+    }
+  }, [userId, expertSessions, fetchSessionRsvps]);
+
+  const toggleSessionRsvp = async (sessionId: string) => {
+    const user = getCurrentUser();
+    if (!user) {
+      Alert.alert('Login required', 'Please log in to RSVP for expert Q&A sessions.');
+      return;
+    }
+
+    const alreadyRsvped = rsvpSessionIds.includes(sessionId);
+
+    try {
+      if (alreadyRsvped) {
+        const record = await pb.collection('expert_qa_rsvps').getFirstListItem(
+          `session_id = "${sessionId}" && owner_id = "${user.id}"`,
+          { requestKey: null }
+        );
+        await pb.collection('expert_qa_rsvps').delete(record.id);
+
+        setRsvpSessionIds((prev) => prev.filter((id) => id !== sessionId));
+        setSessionRsvpCounts((prev) => ({
+          ...prev,
+          [sessionId]: Math.max((prev[sessionId] || 1) - 1, 0),
+        }));
+      } else {
+        await pb.collection('expert_qa_rsvps').create({
+          session_id: sessionId,
+          owner_id: user.id,
+        });
+
+        setRsvpSessionIds((prev) => [...prev, sessionId]);
+        setSessionRsvpCounts((prev) => ({
+          ...prev,
+          [sessionId]: (prev[sessionId] || 0) + 1,
+        }));
+      }
+    } catch (error: any) {
+      if (error?.status === 404) {
+        Alert.alert(
+          'Setup needed',
+          'expert_qa_sessions/expert_qa_rsvps collections are not available yet. Please import the updated PocketBase schema.'
+        );
+      } else {
+        Alert.alert('Action failed', 'Could not update RSVP. Please try again.');
+      }
+    }
+  };
+
+  const openQuestionComposer = (session: ExpertSession) => {
+    setNewPostType('question');
+    if (!newPostTitle.trim()) {
+      setNewPostTitle(`Q&A: ${session.topic}`);
+    }
+    setModalVisible(true);
   };
 
   const roundCoordinate = (value: number) => {
@@ -520,6 +699,21 @@ export default function CommunityScreen() {
     return `${adjectives[adjIndex]} ${animals[animalIndex]}`;
   };
 
+  const formatSessionTime = (dateValue: string) => {
+    return new Date(dateValue).toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const getSpotsLeft = (session: ExpertSession) => {
+    const joinedCount = sessionRsvpCounts[session.id] || 0;
+    return Math.max(session.capacity - joinedCount, 0);
+  };
+
   const renderFilterButton = (filter: typeof FILTER_OPTIONS[0]) => {
     const isActive = activeFilter === filter;
     const label = filter === 'all' ? 'All Posts' : POST_TYPE_CONFIG[filter].label;
@@ -633,6 +827,75 @@ export default function CommunityScreen() {
           <Text style={styles.localMapOpenCtaText}>Open map</Text>
           <MaterialCommunityIcons name="chevron-right" size={18} color="#1D4ED8" />
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.expertSection}>
+        <View style={styles.expertHeader}>
+          <View>
+            <Text style={styles.expertTitle}>Expert Q&A Sessions</Text>
+            <Text style={styles.expertSubtitle}>Behaviorist AMAs from the reactive-dog community</Text>
+          </View>
+          <TouchableOpacity style={styles.expertRefreshButton} onPress={fetchExpertSessions}>
+            <MaterialCommunityIcons name="refresh" size={16} color="#0E7490" />
+          </TouchableOpacity>
+        </View>
+
+        {loadingExpertSessions ? (
+          <View style={styles.expertLoadingWrap}>
+            <ActivityIndicator size="small" color="#0891B2" />
+            <Text style={styles.expertLoadingText}>Loading sessions...</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.expertCardsWrap}
+          >
+            {expertSessions.map((session) => {
+              const isRsvped = rsvpSessionIds.includes(session.id);
+              const spotsLeft = getSpotsLeft(session);
+
+              return (
+                <View key={session.id} style={styles.expertCard}>
+                  <Text style={styles.expertCardTopic}>{session.topic}</Text>
+                  <Text style={styles.expertCardExpert}>{session.expert_name} • {session.credentials}</Text>
+                  <Text style={styles.expertCardTime}>{formatSessionTime(session.scheduled_at)}</Text>
+                  <Text style={styles.expertCardDescription}>{session.description}</Text>
+
+                  <View style={styles.expertMetaRow}>
+                    <View style={styles.expertMetaBadge}>
+                      <MaterialCommunityIcons name="account-group-outline" size={14} color="#0E7490" />
+                      <Text style={styles.expertMetaText}>{spotsLeft} spots left</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.expertActionsRow}>
+                    <TouchableOpacity
+                      style={[styles.expertPrimaryButton, isRsvped && styles.expertPrimaryButtonActive]}
+                      onPress={() => toggleSessionRsvp(session.id)}
+                    >
+                      <MaterialCommunityIcons
+                        name={isRsvped ? 'check-circle' : 'calendar-check-outline'}
+                        size={16}
+                        color={isRsvped ? '#065F46' : '#0E7490'}
+                      />
+                      <Text style={[styles.expertPrimaryButtonText, isRsvped && styles.expertPrimaryButtonTextActive]}>
+                        {isRsvped ? 'RSVPd' : 'RSVP'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.expertSecondaryButton}
+                      onPress={() => openQuestionComposer(session)}
+                    >
+                      <Text style={styles.expertSecondaryButtonText}>Ask question</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       {/* Filter Tabs */}
@@ -1018,6 +1281,143 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#1D4ED8',
+  },
+  expertSection: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#A5F3FC',
+    borderRadius: 14,
+    backgroundColor: '#ECFEFF',
+    padding: 14,
+  },
+  expertHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  expertTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0E7490',
+  },
+  expertSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#155E75',
+  },
+  expertRefreshButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#CFFAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expertLoadingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  expertLoadingText: {
+    fontSize: 13,
+    color: '#0E7490',
+  },
+  expertCardsWrap: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  expertCard: {
+    width: 275,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#CFFAFE',
+    borderRadius: 12,
+    padding: 12,
+  },
+  expertCardTopic: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  expertCardExpert: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0E7490',
+    marginBottom: 2,
+  },
+  expertCardTime: {
+    fontSize: 12,
+    color: '#475569',
+    marginBottom: 8,
+  },
+  expertCardDescription: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#334155',
+    minHeight: 54,
+  },
+  expertMetaRow: {
+    marginTop: 10,
+  },
+  expertMetaBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#ECFEFF',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  expertMetaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0E7490',
+  },
+  expertActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  expertPrimaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#CFFAFE',
+    borderRadius: 10,
+    paddingVertical: 8,
+  },
+  expertPrimaryButtonActive: {
+    backgroundColor: '#D1FAE5',
+  },
+  expertPrimaryButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0E7490',
+  },
+  expertPrimaryButtonTextActive: {
+    color: '#065F46',
+  },
+  expertSecondaryButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#A5F3FC',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  expertSecondaryButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0E7490',
   },
   filterContainer: {
     maxHeight: 50,
