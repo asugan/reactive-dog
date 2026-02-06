@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { Animated, Easing, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Card, Surface } from 'react-native-paper';
 // TODO: PostHog - import { usePostHog } from 'posthog-react-native';
 
 interface Walk {
@@ -26,13 +27,21 @@ export default function Dashboard() {
     totalWalks: 0,
     thisWeekWalks: 0,
   });
+  const entranceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // TODO: PostHog - posthog?.capture('dashboard_viewed');
     fetchDogProfile();
     fetchRecentWalks();
     fetchStats();
-  }, []);
+
+    Animated.timing(entranceAnim, {
+      toValue: 1,
+      duration: 360,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entranceAnim]);
 
   const fetchDogProfile = async () => {
     try {
@@ -127,6 +136,12 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <Animated.View
+          style={{
+            opacity: entranceAnim,
+            transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+          }}
+        >
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -138,12 +153,10 @@ export default function Dashboard() {
         </View>
 
         {/* Main CTA - BAT Walk */}
-        <TouchableOpacity
-          style={styles.batWalkCard}
-          onPress={() => router.push('/walk')}
-        >
+        <Card style={styles.batWalkCard} onPress={() => router.push('/walk')}>
+          <Card.Content style={styles.batWalkCardContent}>
           <View style={styles.batWalkIconContainer}>
-            <MaterialCommunityIcons name="walk" size={40} color="#7C3AED" />
+              <MaterialCommunityIcons name="walk" size={40} color="#0F766E" />
           </View>
           <View style={styles.batWalkContent}>
             <Text style={styles.batWalkTitle}>Start BAT Walk</Text>
@@ -151,52 +164,57 @@ export default function Dashboard() {
               Begin a training session with distance alerts and technique reminders
             </Text>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color="#7C3AED" />
-        </TouchableOpacity>
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#0F766E" />
+          </Card.Content>
+        </Card>
 
         {/* Quick Actions */}
         <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.quickActionButton}
+          <Pressable
+            style={({ pressed }) => [styles.quickActionButton, pressed && styles.quickActionPressed]}
             onPress={() => router.push('/(tabs)/log')}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: '#FEE2E2' }]}>
               <MaterialCommunityIcons name="alert-circle" size={24} color="#EF4444" />
             </View>
             <Text style={styles.quickActionLabel}>Log Trigger</Text>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
-            style={styles.quickActionButton}
+          <Pressable
+            style={({ pressed }) => [styles.quickActionButton, pressed && styles.quickActionPressed]}
             onPress={() => router.push('/(tabs)/progress')}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: '#DBEAFE' }]}>
               <MaterialCommunityIcons name="chart-line" size={24} color="#3B82F6" />
             </View>
             <Text style={styles.quickActionLabel}>Progress</Text>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
-            style={styles.quickActionButton}
+          <Pressable
+            style={({ pressed }) => [styles.quickActionButton, pressed && styles.quickActionPressed]}
             onPress={() => router.push('/(tabs)/community')}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: '#D1FAE5' }]}>
               <MaterialCommunityIcons name="message-text" size={24} color="#10B981" />
             </View>
             <Text style={styles.quickActionLabel}>Community</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {/* Stats Overview */}
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
             <Text style={styles.statValue}>{stats.thisWeekWalks}</Text>
             <Text style={styles.statLabel}>This Week</Text>
-          </View>
-          <View style={styles.statCard}>
+            </Card.Content>
+          </Card>
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
             <Text style={styles.statValue}>{stats.totalWalks}</Text>
             <Text style={styles.statLabel}>Total Walks</Text>
-          </View>
+            </Card.Content>
+          </Card>
         </View>
 
         {/* Recent Walks */}
@@ -219,7 +237,8 @@ export default function Dashboard() {
           ) : (
             <View style={styles.walksList}>
               {recentWalks.map((walk) => (
-                <View key={walk.id} style={styles.walkCard}>
+                <Card key={walk.id} style={styles.walkCard}>
+                  <Card.Content>
                   <View style={styles.walkHeader}>
                     <Text style={styles.walkDate}>{formatDate(walk.started_at)}</Text>
                     <Text style={styles.walkDuration}>
@@ -238,19 +257,21 @@ export default function Dashboard() {
                       </Text>
                     </View>
                   )}
-                </View>
+                  </Card.Content>
+                </Card>
               ))}
             </View>
           )}
         </View>
 
         {/* Motivational Quote */}
-        <View style={styles.quoteCard}>
-          <MaterialCommunityIcons name="format-quote-open" size={24} color="#7C3AED" />
+        <Surface style={styles.quoteCard} elevation={1}>
+          <MaterialCommunityIcons name="format-quote-open" size={24} color="#0F766E" />
           <Text style={styles.quoteText}>
             &ldquo;Progress, not perfection. Every walk is a step forward.&rdquo;
           </Text>
-        </View>
+        </Surface>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -259,40 +280,44 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F3F7F6',
   },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   header: {
     marginBottom: 24,
   },
   greeting: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#4B5563',
     marginBottom: 4,
   },
   dogName: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
   },
   batWalkCard: {
+    backgroundColor: '#E6F6F4',
+    borderRadius: 18,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#C6ECE7',
+  },
+  batWalkCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EDE9FE',
     padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
   },
   batWalkIconContainer: {
     width: 64,
     height: 64,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
@@ -305,12 +330,12 @@ const styles = StyleSheet.create({
   batWalkTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#7C3AED',
+    color: '#0F766E',
     marginBottom: 4,
   },
   batWalkDescription: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#475569',
   },
   quickActions: {
     flexDirection: 'row',
@@ -320,6 +345,9 @@ const styles = StyleSheet.create({
   quickActionButton: {
     alignItems: 'center',
     flex: 1,
+  },
+  quickActionPressed: {
+    transform: [{ scale: 0.98 }],
   },
   quickActionIcon: {
     width: 56,
@@ -332,7 +360,7 @@ const styles = StyleSheet.create({
   quickActionLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
+    color: '#334155',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -341,21 +369,23 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#DDE7E5',
+  },
+  statCardContent: {
+    alignItems: 'center',
+    paddingVertical: 20,
   },
   statValue: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#7C3AED',
+    color: '#0F766E',
   },
   statLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
     marginTop: 4,
   },
   section: {
@@ -370,30 +400,30 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
   },
   emptyState: {
     alignItems: 'center',
     padding: 40,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F8FAFC',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#DCE5EA',
     borderStyle: 'dashed',
   },
   emptyStateText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#475569',
     marginTop: 12,
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#94A3B8',
     marginTop: 4,
     textAlign: 'center',
   },
@@ -401,11 +431,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   walkCard: {
-    backgroundColor: '#F9FAFB',
-    padding: 16,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#DDE7E5',
   },
   walkHeader: {
     flexDirection: 'row',
@@ -415,18 +444,18 @@ const styles = StyleSheet.create({
   walkDate: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#374151',
+    color: '#334155',
   },
   walkDuration: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
   },
   walkRating: {
     fontSize: 14,
     marginBottom: 8,
   },
   techniqueBadge: {
-    backgroundColor: '#EDE9FE',
+    backgroundColor: '#E6F6F4',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -435,18 +464,20 @@ const styles = StyleSheet.create({
   techniqueText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#7C3AED',
+    color: '#0F766E',
   },
   quoteCard: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EAF4F3',
     padding: 20,
     borderRadius: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D4E7E4',
   },
   quoteText: {
     fontSize: 16,
     fontStyle: 'italic',
-    color: '#6B7280',
+    color: '#475569',
     textAlign: 'center',
     marginTop: 8,
   },

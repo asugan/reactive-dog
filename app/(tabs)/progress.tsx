@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator, Modal } from 'react-native';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Animated, Easing, View, Text, StyleSheet, ScrollView, Dimensions, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthModel, RecordModel } from "pocketbase";
 import { pb, getCurrentUser } from '../../lib/pocketbase';
@@ -8,8 +8,10 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
 
 const { width } = Dimensions.get('window');
+const ACCENT_COLOR = '#1D4ED8';
 
 interface TriggerLog {
   id: string;
@@ -74,6 +76,7 @@ export default function ProgressScreen() {
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   });
+  const entranceAnim = useRef(new Animated.Value(0)).current;
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -146,6 +149,15 @@ export default function ProgressScreen() {
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  useEffect(() => {
+    Animated.timing(entranceAnim, {
+      toValue: 1,
+      duration: 380,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entranceAnim]);
 
   // Calculate map region when logs change
   useEffect(() => {
@@ -405,14 +417,14 @@ export default function ProgressScreen() {
         <head>
           <style>
             body { font-family: Arial, sans-serif; padding: 40px; }
-            h1 { color: #7C3AED; }
+             h1 { color: #1D4ED8; }
             h2 { color: #374151; margin-top: 30px; }
             .stats { display: flex; gap: 20px; margin: 20px 0; }
             .stat-box { background: #F3F4F6; padding: 20px; border-radius: 8px; flex: 1; }
-            .stat-value { font-size: 32px; font-weight: bold; color: #7C3AED; }
+             .stat-value { font-size: 32px; font-weight: bold; color: #1D4ED8; }
             .stat-label { color: #6B7280; margin-top: 5px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #EDE9FE; padding: 12px; text-align: left; }
+             th { background: #DBEAFE; padding: 12px; text-align: left; }
             td { padding: 12px; border-bottom: 1px solid #E5E7EB; }
             .footer { margin-top: 40px; color: #9CA3AF; font-size: 12px; }
           </style>
@@ -477,7 +489,7 @@ export default function ProgressScreen() {
     backgroundGradientFrom: '#fff',
     backgroundGradientTo: '#fff',
     decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(124, 58, 237, ${opacity})`,
+    color: (opacity = 1) => `rgba(29, 78, 216, ${opacity})`,
     labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
     style: {
       borderRadius: 16,
@@ -485,7 +497,7 @@ export default function ProgressScreen() {
     propsForDots: {
       r: '4',
       strokeWidth: '2',
-      stroke: '#7C3AED',
+      stroke: ACCENT_COLOR,
     },
   };
 
@@ -493,13 +505,19 @@ export default function ProgressScreen() {
     ...chartConfig,
     color: (opacity = 1, index?: number) => {
       const colors = Object.values(TRIGGER_COLORS);
-      return index !== undefined ? colors[index % colors.length] : `rgba(124, 58, 237, ${opacity})`;
+      return index !== undefined ? colors[index % colors.length] : `rgba(29, 78, 216, ${opacity})`;
     },
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <Animated.View
+          style={{
+            opacity: entranceAnim,
+            transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+          }}
+        >
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View>
@@ -507,15 +525,18 @@ export default function ProgressScreen() {
               <Text style={styles.subtitle}>Track your dog&apos;s improvement over time</Text>
             </View>
             <View style={styles.headerButtons}>
-              <TouchableOpacity
+              <Button
+                mode="contained-tonal"
+                icon="map-marker"
                 style={[styles.mapButton, logs.filter(l => l.location_latitude).length === 0 && styles.mapButtonDisabled]}
                 onPress={() => setShowMap(true)}
                 disabled={logs.filter(l => l.location_latitude).length === 0}
               >
-                <MaterialCommunityIcons name="map-marker" size={20} color="#7C3AED" />
-                <Text style={styles.mapButtonText}>Map</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                Map
+              </Button>
+              <Button
+                mode="contained-tonal"
+                icon="file-pdf-box"
                 style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
                 onPress={generateReport}
                 disabled={exporting || logs.length === 0}
@@ -523,12 +544,9 @@ export default function ProgressScreen() {
                 {exporting ? (
                   <ActivityIndicator size="small" color="#7C3AED" />
                 ) : (
-                  <>
-                    <MaterialCommunityIcons name="file-pdf-box" size={20} color="#7C3AED" />
-                    <Text style={styles.exportButtonText}>Export</Text>
-                  </>
+                  'Export'
                 )}
-              </TouchableOpacity>
+              </Button>
             </View>
           </View>
         </View>
@@ -536,11 +554,12 @@ export default function ProgressScreen() {
         {/* Time Range Selector */}
         <View style={styles.timeRangeContainer}>
           {(['7days', '30days', '90days'] as const).map((range) => (
-            <TouchableOpacity
+            <Pressable
               key={range}
-              style={[
+              style={({ pressed }) => [
                 styles.timeRangeButton,
                 timeRange === range && styles.timeRangeButtonActive,
+                pressed && styles.timeRangeButtonPressed,
               ]}
               onPress={() => setTimeRange(range)}
             >
@@ -552,33 +571,40 @@ export default function ProgressScreen() {
               >
                 {range === '7days' ? '7 Days' : range === '30days' ? '30 Days' : '90 Days'}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </View>
 
         {/* Stats Cards */}
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <MaterialCommunityIcons name="chart-line" size={24} color="#7C3AED" />
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
+            <MaterialCommunityIcons name="chart-line" size={24} color={ACCENT_COLOR} />
             <Text style={styles.statValue}>{stats.totalLogs}</Text>
             <Text style={styles.statLabel}>Total Reactions</Text>
-          </View>
+            </Card.Content>
+          </Card>
 
-          <View style={styles.statCard}>
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
             <MaterialCommunityIcons name="alert-circle" size={24} color={getSeverityColor(stats.averageSeverity)} />
             <Text style={styles.statValue}>{stats.averageSeverity.toFixed(1)}</Text>
             <Text style={styles.statLabel}>Avg Severity</Text>
-          </View>
+            </Card.Content>
+          </Card>
 
-          <View style={styles.statCard}>
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
             <MaterialCommunityIcons name="fire" size={24} color="#EF4444" />
             <Text style={styles.statValue}>
               {stats.thisWeekCount}
             </Text>
             <Text style={styles.statLabel}>This Week</Text>
-          </View>
+            </Card.Content>
+          </Card>
 
-          <View style={styles.statCard}>
+          <Card style={styles.statCard}>
+            <Card.Content style={styles.statCardContent}>
             <MaterialCommunityIcons 
               name={stats.thisWeekCount <= stats.lastWeekCount ? "trending-down" : "trending-up"} 
               size={24} 
@@ -588,7 +614,8 @@ export default function ProgressScreen() {
               {stats.thisWeekCount <= stats.lastWeekCount ? 'Better' : 'More'}
             </Text>
             <Text style={styles.statLabel}>vs Last Week</Text>
-          </View>
+            </Card.Content>
+          </Card>
         </View>
 
         {/* Most Common Trigger */}
@@ -719,7 +746,7 @@ export default function ProgressScreen() {
                   </Text>
                 </View>
                 {log.distance_meters !== null && log.distance_meters !== undefined && (
-                  <Text style={styles.recentDistance}>{log.distance_meters}m</Text>
+             <Text style={styles.recentDistance}>{log.distance_meters}m</Text>
                 )}
               </View>
             ))}
@@ -738,25 +765,15 @@ export default function ProgressScreen() {
             </View>
           </View>
         )}
+        </Animated.View>
       </ScrollView>
 
-      {/* Map Modal */}
-      <Modal
-        visible={showMap}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowMap(false)}
-      >
-        <View style={styles.modalOverlay}>
+      <Portal>
+        <PaperModal visible={showMap} onDismiss={() => setShowMap(false)} contentContainerStyle={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.mapHeader}>
               <Text style={styles.mapTitle}>Trigger Map</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setShowMap(false)}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
+              <IconButton icon="close" mode="contained-tonal" onPress={() => setShowMap(false)} />
             </View>
             
             <View style={styles.mapContainer}>
@@ -795,8 +812,8 @@ export default function ProgressScreen() {
               </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </PaperModal>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -804,14 +821,14 @@ export default function ProgressScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F3F7FB',
   },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   header: {
     marginBottom: 24,
@@ -819,16 +836,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#64748B',
   },
   timeRangeContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EAF0F8',
     borderRadius: 12,
     padding: 4,
     marginBottom: 24,
@@ -839,8 +856,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
   },
+  timeRangeButtonPressed: {
+    transform: [{ scale: 0.98 }],
+  },
   timeRangeButtonActive: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -853,7 +873,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   timeRangeTextActive: {
-    color: '#1F2937',
+    color: '#0F172A',
     fontWeight: '600',
   },
   statsGrid: {
@@ -865,17 +885,19 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E2EC',
+  },
+  statCardContent: {
+    alignItems: 'center',
+    paddingVertical: 20,
   },
   statValue: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
     marginTop: 8,
     marginBottom: 4,
   },
@@ -919,10 +941,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   heatmapCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#EFF6FF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#BFDBFE',
     padding: 16,
   },
   heatmapSubtitle: {
@@ -971,12 +993,12 @@ const styles = StyleSheet.create({
   },
   emptyChart: {
     height: 200,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E2EC',
     borderStyle: 'dashed',
   },
   emptyChartText: {
@@ -1050,7 +1072,7 @@ const styles = StyleSheet.create({
   mapButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#E0EDFF',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -1059,15 +1081,10 @@ const styles = StyleSheet.create({
   mapButtonDisabled: {
     opacity: 0.5,
   },
-  mapButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#7C3AED',
-  },
   exportButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3E8FF',
+    backgroundColor: '#E0EDFF',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -1075,11 +1092,6 @@ const styles = StyleSheet.create({
   },
   exportButtonDisabled: {
     opacity: 0.5,
-  },
-  exportButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#7C3AED',
   },
   // Map Modal Styles
   modalOverlay: {
@@ -1089,7 +1101,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
@@ -1100,13 +1112,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#D9E2EC',
     backgroundColor: '#fff',
   },
   mapTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
   },
   closeButton: {
     padding: 8,
@@ -1156,7 +1168,7 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#475569',
   },
   calloutContainer: {
     backgroundColor: '#fff',

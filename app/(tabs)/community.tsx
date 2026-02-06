@@ -1,24 +1,25 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
+  Animated,
+  Easing,
   View, 
   Text, 
   StyleSheet, 
-  TouchableOpacity, 
+  Pressable,
   ScrollView, 
-  TextInput, 
-  Modal,
   RefreshControl,
   Alert,
   KeyboardAvoidingView,
   Platform,
   Switch,
-  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
+import { ActivityIndicator, Button, Card, Chip, Dialog, FAB, IconButton, Modal as PaperModal, Portal, TextInput } from 'react-native-paper';
+import * as Haptics from 'expo-haptics';
 
 interface CommunityPost {
   id: string;
@@ -71,6 +72,7 @@ const DEFAULT_MAP_REGION = {
 const LOCATION_PRECISION = 3;
 const LOCATION_PRECISION_METERS = 110;
 const EARTH_RADIUS_KM = 6371;
+const ACCENT_COLOR = '#1D4ED8';
 
 const toRad = (value: number) => {
   return (value * Math.PI) / 180;
@@ -157,6 +159,8 @@ const FALLBACK_EXPERT_SESSIONS: ExpertSession[] = [
 ];
 
 export default function CommunityScreen() {
+  const insets = useSafeAreaInsets();
+  const entranceAnim = useRef(new Animated.Value(0)).current;
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -180,10 +184,30 @@ export default function CommunityScreen() {
   const [loadingExpertSessions, setLoadingExpertSessions] = useState(true);
   const [rsvpSessionIds, setRsvpSessionIds] = useState<string[]>([]);
   const [sessionRsvpCounts, setSessionRsvpCounts] = useState<Record<string, number>>({});
+  const [privacyDialogVisible, setPrivacyDialogVisible] = useState(false);
+
+  const triggerTapHaptic = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const triggerSuccessHaptic = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const triggerErrorHaptic = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  };
 
   useEffect(() => {
     fetchUserId();
-  }, []);
+
+    Animated.timing(entranceAnim, {
+      toValue: 1,
+      duration: 380,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entranceAnim]);
 
   useEffect(() => {
     fetchLocationSharingStatus();
@@ -275,11 +299,13 @@ export default function CommunityScreen() {
   const toggleSessionRsvp = async (sessionId: string) => {
     const user = getCurrentUser();
     if (!user) {
+      triggerErrorHaptic();
       Alert.alert('Login required', 'Please log in to RSVP for expert Q&A sessions.');
       return;
     }
 
     const alreadyRsvped = rsvpSessionIds.includes(sessionId);
+    triggerTapHaptic();
 
     try {
       if (alreadyRsvped) {
@@ -294,6 +320,7 @@ export default function CommunityScreen() {
           ...prev,
           [sessionId]: Math.max((prev[sessionId] || 1) - 1, 0),
         }));
+        triggerSuccessHaptic();
       } else {
         await pb.collection('expert_qa_rsvps').create({
           session_id: sessionId,
@@ -305,8 +332,10 @@ export default function CommunityScreen() {
           ...prev,
           [sessionId]: (prev[sessionId] || 0) + 1,
         }));
+        triggerSuccessHaptic();
       }
     } catch (error: any) {
+      triggerErrorHaptic();
       if (error?.status === 404) {
         Alert.alert(
           'Setup needed',
@@ -611,15 +640,18 @@ export default function CommunityScreen() {
 
   const handleCreatePost = async () => {
     if (!newPostTitle.trim() || !newPostContent.trim()) {
+      triggerErrorHaptic();
       Alert.alert('Error', 'Please fill in both title and content');
       return;
     }
 
     try {
+      triggerTapHaptic();
       setSubmitting(true);
       const user = getCurrentUser();
       
       if (!user) {
+        triggerErrorHaptic();
         Alert.alert('Error', 'You must be logged in to post');
         return;
       }
@@ -641,9 +673,11 @@ export default function CommunityScreen() {
       // Refresh posts
       fetchPosts();
       
+      triggerSuccessHaptic();
       Alert.alert('Success', 'Your post has been published!');
     } catch (error) {
       console.error('Error creating post:', error);
+      triggerErrorHaptic();
       Alert.alert('Error', 'Failed to create post. Please try again.');
     } finally {
       setSubmitting(false);
@@ -721,21 +755,17 @@ export default function CommunityScreen() {
     const label = filter === 'all' ? 'All Posts' : POST_TYPE_CONFIG[filter].label;
     
     return (
-      <TouchableOpacity
+      <Pressable
         key={filter}
-        style={[
+        style={({ pressed }) => [
           styles.filterButton,
-          isActive && styles.filterButtonActive
+          isActive && styles.filterButtonActive,
+          pressed && styles.pressScaleSoft,
         ]}
         onPress={() => setActiveFilter(filter)}
       >
-        <Text style={[
-          styles.filterButtonText,
-          isActive && styles.filterButtonTextActive
-        ]}>
-          {label}
-        </Text>
-      </TouchableOpacity>
+        <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>{label}</Text>
+      </Pressable>
     );
   };
 
@@ -744,9 +774,10 @@ export default function CommunityScreen() {
     const isOwnPost = post.author_id === userId;
     
     return (
-      <View key={post.id} style={styles.postCard}>
+      <Card key={post.id} style={styles.postCard}>
+        <Card.Content>
         <View style={styles.postHeader}>
-          <View style={[styles.postTypeBadge, { backgroundColor: config.bgColor }]}>
+          <View style={[styles.postTypeBadge, { backgroundColor: config.bgColor }]}> 
             <MaterialCommunityIcons name={config.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={14} color={config.color} />
             <Text style={[styles.postTypeText, { color: config.color }]}>
               {config.label}
@@ -766,8 +797,8 @@ export default function CommunityScreen() {
             </Text>
           </View>
           
-          <TouchableOpacity 
-            style={styles.likeButton}
+          <Pressable
+            style={({ pressed }) => [styles.likeButton, pressed && styles.pressScaleSoft]}
             onPress={() => handleLikePost(post.id)}
           >
             <MaterialCommunityIcons 
@@ -778,14 +809,22 @@ export default function CommunityScreen() {
             <Text style={[styles.likeCount, post.likes_count > 0 && styles.likeCountActive]}>
               {post.likes_count}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
-      </View>
+        </Card.Content>
+      </Card>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: entranceAnim,
+          transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+        }}
+      >
       {/* Header */}
       <View style={styles.header}>
         <View>
@@ -795,18 +834,22 @@ export default function CommunityScreen() {
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.mapOpenButton}
+          <IconButton
+            icon="map-marker-radius"
+            mode="contained-tonal"
+            containerColor="#E0EDFF"
+            iconColor={ACCENT_COLOR}
+            size={22}
             onPress={openLocalMap}
-          >
-            <MaterialCommunityIcons name="map-marker-radius" size={20} color="#1D4ED8" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.newPostButton}
+          />
+          <IconButton
+            icon="plus"
+            mode="contained"
+            containerColor={ACCENT_COLOR}
+            iconColor="#fff"
+            size={22}
             onPress={() => setModalVisible(true)}
-          >
-            <MaterialCommunityIcons name="plus" size={24} color="#fff" />
-          </TouchableOpacity>
+          />
         </View>
       </View>
 
@@ -822,13 +865,13 @@ export default function CommunityScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.localMapOpenCta}
+        <Pressable
+          style={({ pressed }) => [styles.localMapOpenCta, pressed && styles.pressScale]}
           onPress={openLocalMap}
         >
           <Text style={styles.localMapOpenCtaText}>Open map</Text>
           <MaterialCommunityIcons name="chevron-right" size={18} color="#1D4ED8" />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <View style={styles.expertSection}>
@@ -837,9 +880,9 @@ export default function CommunityScreen() {
             <Text style={styles.expertTitle}>Expert Q&A Sessions</Text>
             <Text style={styles.expertSubtitle}>Behaviorist AMAs from the reactive-dog community</Text>
           </View>
-          <TouchableOpacity style={styles.expertRefreshButton} onPress={fetchExpertSessions}>
+          <Pressable style={({ pressed }) => [styles.expertRefreshButton, pressed && styles.pressScale]} onPress={fetchExpertSessions}>
             <MaterialCommunityIcons name="refresh" size={16} color="#0E7490" />
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {loadingExpertSessions ? (
@@ -872,8 +915,8 @@ export default function CommunityScreen() {
                   </View>
 
                   <View style={styles.expertActionsRow}>
-                    <TouchableOpacity
-                      style={[styles.expertPrimaryButton, isRsvped && styles.expertPrimaryButtonActive]}
+                    <Pressable
+                      style={({ pressed }) => [styles.expertPrimaryButton, isRsvped && styles.expertPrimaryButtonActive, pressed && styles.pressScale]}
                       onPress={() => toggleSessionRsvp(session.id)}
                     >
                       <MaterialCommunityIcons
@@ -884,14 +927,14 @@ export default function CommunityScreen() {
                       <Text style={[styles.expertPrimaryButtonText, isRsvped && styles.expertPrimaryButtonTextActive]}>
                         {isRsvped ? 'RSVPd' : 'RSVP'}
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
 
-                    <TouchableOpacity
-                      style={styles.expertSecondaryButton}
+                    <Pressable
+                      style={({ pressed }) => [styles.expertSecondaryButton, pressed && styles.pressScale]}
                       onPress={() => openQuestionComposer(session)}
                     >
                       <Text style={styles.expertSecondaryButtonText}>Ask question</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               );
@@ -901,14 +944,15 @@ export default function CommunityScreen() {
       </View>
 
       {/* Filter Tabs */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
-        contentContainerStyle={styles.filterContent}
-      >
-        {FILTER_OPTIONS.map(renderFilterButton)}
-      </ScrollView>
+      <View style={styles.filterWrapper}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContent}
+        >
+          {FILTER_OPTIONS.map(renderFilterButton)}
+        </ScrollView>
+      </View>
 
       {/* Posts Feed */}
       <ScrollView
@@ -929,12 +973,9 @@ export default function CommunityScreen() {
             <Text style={styles.emptyStateSubtitle}>
               Be the first to share your experience or ask a question!
             </Text>
-            <TouchableOpacity
-              style={styles.emptyStateButton}
-              onPress={() => setModalVisible(true)}
-            >
-              <Text style={styles.emptyStateButtonText}>Create First Post</Text>
-            </TouchableOpacity>
+            <Button mode="contained" style={styles.emptyStateButton} labelStyle={styles.emptyStateButtonText} onPress={() => setModalVisible(true)}>
+              Create First Post
+            </Button>
           </View>
         ) : (
           <View style={styles.postsList}>
@@ -942,26 +983,21 @@ export default function CommunityScreen() {
           </View>
         )}
       </ScrollView>
+      </Animated.View>
 
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={localMapVisible}
-        onRequestClose={() => setLocalMapVisible(false)}
-      >
-        <View style={styles.mapModalOverlay}>
+      <Portal>
+        <PaperModal
+          visible={localMapVisible}
+          onDismiss={() => setLocalMapVisible(false)}
+          contentContainerStyle={styles.mapModalOverlay}
+        >
           <View style={styles.mapModalContent}>
             <View style={styles.mapModalHeader}>
               <View>
                 <Text style={styles.mapModalTitle}>Local Owner Map</Text>
                 <Text style={styles.mapModalSubtitle}>Approximate locations only (about 110m precision)</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setLocalMapVisible(false)}
-                style={styles.closeButton}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
+              <IconButton icon="close" mode="contained-tonal" onPress={() => setLocalMapVisible(false)} />
             </View>
 
             <View style={styles.mapShareRow}>
@@ -988,6 +1024,11 @@ export default function CommunityScreen() {
               <Text style={styles.privacyNoteText}>
                 Your exact address is never shared. Only approximate area is shown.
               </Text>
+              <IconButton
+                icon="information-outline"
+                size={16}
+                onPress={() => setPrivacyDialogVisible(true)}
+              />
             </View>
 
             <View style={styles.radiusRow}>
@@ -998,13 +1039,15 @@ export default function CommunityScreen() {
                   const label = radius === 'all' ? 'All' : `${radius} km`;
 
                   return (
-                    <TouchableOpacity
+                    <Chip
                       key={String(radius)}
                       style={[styles.radiusButton, isActive && styles.radiusButtonActive]}
+                      selected={isActive}
+                      mode={isActive ? 'flat' : 'outlined'}
                       onPress={() => setRadiusFilter(radius)}
                     >
-                      <Text style={[styles.radiusButtonText, isActive && styles.radiusButtonTextActive]}>{label}</Text>
-                    </TouchableOpacity>
+                      {label}
+                    </Chip>
                   );
                 })}
               </View>
@@ -1063,35 +1106,32 @@ export default function CommunityScreen() {
 
             <View style={styles.mapFooterRow}>
               <Text style={styles.mapFooterText}>{filteredNearbyOwners.length} owner(s) nearby</Text>
-              <TouchableOpacity onPress={fetchNearbyOwners} style={styles.refreshNearbyButton}>
-                <MaterialCommunityIcons name="refresh" size={16} color="#1D4ED8" />
-                <Text style={styles.refreshNearbyText}>Refresh</Text>
-              </TouchableOpacity>
+              <Button mode="contained-tonal" icon="refresh" onPress={fetchNearbyOwners} style={styles.refreshNearbyButton}>
+                Refresh
+              </Button>
             </View>
           </View>
-        </View>
-      </Modal>
+        </PaperModal>
 
-      {/* Create Post Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContent}>
+        <Dialog visible={privacyDialogVisible} onDismiss={() => setPrivacyDialogVisible(false)}>
+          <Dialog.Title>Privacy by Design</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogText}>
+              Your map pin is rounded to an approximate area (about 110m precision). No exact address is stored or shared.
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setPrivacyDialogVisible(false)}>Got it</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Portal>
+        <PaperModal visible={modalVisible} onDismiss={() => setModalVisible(false)} contentContainerStyle={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Post</Text>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.closeButton}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
+              <IconButton icon="close" mode="contained-tonal" onPress={() => setModalVisible(false)} />
             </View>
 
             <ScrollView style={styles.modalBody}>
@@ -1099,7 +1139,7 @@ export default function CommunityScreen() {
               <Text style={styles.inputLabel}>Post Type</Text>
               <View style={styles.typeSelection}>
                 {Object.entries(POST_TYPE_CONFIG).map(([type, config]) => (
-                  <TouchableOpacity
+                  <Chip
                     key={type}
                     style={[
                       styles.typeButton,
@@ -1109,17 +1149,12 @@ export default function CommunityScreen() {
                         borderWidth: 2
                       }
                     ]}
+                    selected={newPostType === type}
+                    mode={newPostType === type ? 'flat' : 'outlined'}
                     onPress={() => setNewPostType(type as 'general' | 'win_of_the_day' | 'question' | 'success_story')}
                   >
-                    <MaterialCommunityIcons 
-                      name={config.icon as keyof typeof MaterialCommunityIcons.glyphMap} 
-                      size={20} 
-                      color={config.color} 
-                    />
-                    <Text style={[styles.typeButtonText, { color: config.color }]}>
-                      {config.label}
-                    </Text>
-                  </TouchableOpacity>
+                    {config.label}
+                  </Chip>
                 ))}
               </View>
 
@@ -1128,7 +1163,7 @@ export default function CommunityScreen() {
               <TextInput
                 style={styles.titleInput}
                 placeholder="What's on your mind?"
-                placeholderTextColor="#9CA3AF"
+                mode="outlined"
                 value={newPostTitle}
                 onChangeText={setNewPostTitle}
                 maxLength={100}
@@ -1139,13 +1174,12 @@ export default function CommunityScreen() {
               <TextInput
                 style={styles.contentInput}
                 placeholder="Share your story, ask a question, or celebrate a win..."
-                placeholderTextColor="#9CA3AF"
+                mode="outlined"
                 value={newPostContent}
                 onChangeText={setNewPostContent}
                 multiline
                 numberOfLines={6}
                 maxLength={1000}
-                textAlignVertical="top"
               />
 
               {/* Anonymous Notice */}
@@ -1158,29 +1192,39 @@ export default function CommunityScreen() {
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity
+              <Button
+                mode="outlined"
                 style={styles.cancelButton}
+                labelStyle={styles.cancelButtonText}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
                 style={[
                   styles.submitButton,
                   (!newPostTitle.trim() || !newPostContent.trim() || submitting) && 
                     styles.submitButtonDisabled
                 ]}
+                labelStyle={styles.submitButtonText}
                 onPress={handleCreatePost}
                 disabled={!newPostTitle.trim() || !newPostContent.trim() || submitting}
               >
-                <Text style={styles.submitButtonText}>
-                  {submitting ? 'Publishing...' : 'Publish Post'}
-                </Text>
-              </TouchableOpacity>
+                {submitting ? 'Publishing...' : 'Publish Post'}
+              </Button>
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          </KeyboardAvoidingView>
+        </PaperModal>
+      </Portal>
+
+      <FAB
+        icon="plus"
+        color="#fff"
+        style={[styles.createFab, { bottom: insets.bottom + 86 }]}
+        label="New Post"
+        onPress={() => setModalVisible(true)}
+      />
     </SafeAreaView>
   );
 }
@@ -1188,7 +1232,7 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F3F7FB',
   },
   header: {
     flexDirection: 'row',
@@ -1200,7 +1244,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
   },
   headerSubtitle: {
     fontSize: 14,
@@ -1214,7 +1258,7 @@ const styles = StyleSheet.create({
   mapOpenButton: {
     width: 48,
     height: 48,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#E0EDFF',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1222,11 +1266,11 @@ const styles = StyleSheet.create({
   newPostButton: {
     width: 48,
     height: 48,
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#1D4ED8',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -1238,8 +1282,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#BFD2EE',
+    backgroundColor: '#F0F5FF',
     gap: 12,
   },
   localMapCardTop: {
@@ -1251,7 +1295,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#E0EDFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1266,7 +1310,7 @@ const styles = StyleSheet.create({
   localMapCardSubtitle: {
     marginTop: 2,
     fontSize: 13,
-    color: '#1D4ED8',
+    color: ACCENT_COLOR,
     lineHeight: 18,
   },
   localMapOpenCta: {
@@ -1277,16 +1321,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#E0EDFF',
   },
   localMapOpenCtaText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: ACCENT_COLOR,
   },
   expertSection: {
     marginHorizontal: 16,
-    marginBottom: 10,
+    marginBottom: 6,
     borderWidth: 1,
     borderColor: '#A5F3FC',
     borderRadius: 14,
@@ -1421,39 +1465,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0E7490',
   },
-  filterContainer: {
-    maxHeight: 50,
+  filterWrapper: {
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#D9E2EC',
+    backgroundColor: '#fff',
   },
   filterContent: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
     gap: 8,
   },
   filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    backgroundColor: '#EAF0F8',
   },
   filterButtonActive: {
-    backgroundColor: '#EDE9FE',
+    backgroundColor: '#DBEAFE',
   },
   filterButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: '#6B7280',
   },
   filterButtonTextActive: {
-    color: '#7C3AED',
+    color: ACCENT_COLOR,
   },
   postsContainer: {
     flex: 1,
   },
   postsContent: {
     padding: 16,
+    paddingTop: 10,
+    paddingBottom: 140,
   },
   loadingContainer: {
     padding: 40,
@@ -1481,9 +1526,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyStateButton: {
-    backgroundColor: '#7C3AED',
+    backgroundColor: ACCENT_COLOR,
     paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 6,
     borderRadius: 12,
   },
   emptyStateButtonText: {
@@ -1495,11 +1540,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   postCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E2EC',
   },
   postHeader: {
     flexDirection: 'row',
@@ -1559,6 +1604,12 @@ const styles = StyleSheet.create({
     gap: 4,
     padding: 4,
   },
+  pressScale: {
+    transform: [{ scale: 0.98 }],
+  },
+  pressScaleSoft: {
+    transform: [{ scale: 0.985 }],
+  },
   likeCount: {
     fontSize: 13,
     color: '#9CA3AF',
@@ -1573,10 +1624,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   mapModalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: '88%',
+    height: '90%',
     paddingBottom: 18,
   },
   mapModalHeader: {
@@ -1587,7 +1638,7 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#D9E2EC',
   },
   mapModalTitle: {
     fontSize: 20,
@@ -1656,24 +1707,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   radiusButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#BFD2EE',
+    backgroundColor: '#F0F5FF',
   },
   radiusButtonActive: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#1D4ED8',
-  },
-  radiusButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  radiusButtonTextActive: {
-    color: '#fff',
+    backgroundColor: ACCENT_COLOR,
+    borderColor: ACCENT_COLOR,
   },
   radiusHintBox: {
     marginHorizontal: 20,
@@ -1696,7 +1739,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#BFD2EE',
     flex: 1,
     minHeight: 260,
   },
@@ -1723,10 +1766,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0F5FF',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#BFD2EE',
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1738,7 +1781,7 @@ const styles = StyleSheet.create({
   distanceBadgeValue: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: ACCENT_COLOR,
   },
   mapFooterRow: {
     marginTop: 14,
@@ -1756,7 +1799,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#E0EDFF',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
@@ -1764,7 +1807,12 @@ const styles = StyleSheet.create({
   refreshNearbyText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: ACCENT_COLOR,
+  },
+  dialogText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
@@ -1775,7 +1823,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '90%',
+    maxHeight: '92%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1783,7 +1831,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#D9E2EC',
   },
   modalTitle: {
     fontSize: 20,
@@ -1815,7 +1863,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EAF0F8',
     gap: 6,
   },
   typeButtonText: {
@@ -1823,7 +1871,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   titleInput: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#EEF2F7',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
@@ -1877,15 +1925,20 @@ const styles = StyleSheet.create({
     flex: 2,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#7C3AED',
+    backgroundColor: ACCENT_COLOR,
     alignItems: 'center',
   },
   submitButtonDisabled: {
-    backgroundColor: '#C4B5FD',
+    backgroundColor: '#93C5FD',
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  createFab: {
+    position: 'absolute',
+    right: 18,
+    backgroundColor: ACCENT_COLOR,
   },
 });

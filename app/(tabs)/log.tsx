@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { Animated, Easing, View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { pb, getCurrentUser } from '../../lib/pocketbase';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Button, Card, Chip, SegmentedButtons, TextInput } from 'react-native-paper';
+import * as Haptics from 'expo-haptics';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dog (Off-leash)', emoji: '🐕', color: '#EF4444' },
@@ -39,11 +40,31 @@ export default function LogScreen() {
   const [loading, setLoading] = useState(false);
   const [recentLogs, setRecentLogs] = useState<TriggerLog[]>([]);
   const [dogId, setDogId] = useState<string | null>(null);
+  const entranceAnim = useRef(new Animated.Value(0)).current;
+
+  const triggerTapHaptic = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const triggerSuccessHaptic = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const triggerErrorHaptic = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  };
 
   useEffect(() => {
     fetchDogProfile();
     fetchRecentLogs();
-  }, []);
+
+    Animated.timing(entranceAnim, {
+      toValue: 1,
+      duration: 360,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entranceAnim]);
 
   const fetchDogProfile = async () => {
     try {
@@ -82,15 +103,18 @@ export default function LogScreen() {
 
   const handleSave = async () => {
     if (!selectedTrigger) {
+      triggerErrorHaptic();
       Alert.alert('Error', 'Please select a trigger type');
       return;
     }
 
     if (!dogId) {
+      triggerErrorHaptic();
       Alert.alert('Error', 'No dog profile found. Please complete onboarding first.');
       return;
     }
 
+    triggerTapHaptic();
     setLoading(true);
     try {
       const user = getCurrentUser();
@@ -118,9 +142,11 @@ export default function LogScreen() {
       // Refresh recent logs
       fetchRecentLogs();
 
+      triggerSuccessHaptic();
       Alert.alert('Success', 'Trigger logged successfully!');
     } catch (error) {
       console.error('Error saving trigger log:', error);
+      triggerErrorHaptic();
       Alert.alert('Error', 'Failed to save log. Please try again.');
     } finally {
       setLoading(false);
@@ -143,6 +169,12 @@ export default function LogScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <Animated.View
+          style={{
+            opacity: entranceAnim,
+            transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+          }}
+        >
         <Text style={styles.title}>Quick Log</Text>
         <Text style={styles.subtitle}>
           Log a reaction in 2 taps - track patterns over time
@@ -153,28 +185,21 @@ export default function LogScreen() {
           <Text style={styles.sectionTitle}>What triggered your dog? *</Text>
           <View style={styles.triggersGrid}>
             {TRIGGER_OPTIONS.map((trigger) => (
-              <TouchableOpacity
+              <Chip
                 key={trigger.id}
                 style={[
                   styles.triggerButton,
-                  selectedTrigger === trigger.id && { 
+                  selectedTrigger === trigger.id && {
                     backgroundColor: trigger.color + '20',
                     borderColor: trigger.color,
                     borderWidth: 2,
                   },
                 ]}
+                mode={selectedTrigger === trigger.id ? 'flat' : 'outlined'}
                 onPress={() => setSelectedTrigger(trigger.id)}
               >
-                <Text style={styles.triggerEmoji}>{trigger.emoji}</Text>
-                <Text 
-                  style={[
-                    styles.triggerLabel,
-                    selectedTrigger === trigger.id && { color: trigger.color, fontWeight: '700' }
-                  ]}
-                >
-                  {trigger.label}
-                </Text>
-              </TouchableOpacity>
+                {`${trigger.emoji} ${trigger.label}`}
+              </Chip>
             ))}
           </View>
         </View>
@@ -182,28 +207,17 @@ export default function LogScreen() {
         {/* Severity Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>How intense was the reaction?</Text>
-          <View style={styles.severityContainer}>
-            {[1, 2, 3, 4, 5].map((level) => (
-              <TouchableOpacity
-                key={level}
-                style={[
-                  styles.severityButton,
-                  severity === level && styles.severityButtonActive,
-                  severity === level && { backgroundColor: level <= 2 ? '#10B981' : level === 3 ? '#F59E0B' : '#EF4444' }
-                ]}
-                onPress={() => setSeverity(level)}
-              >
-                <Text
-                  style={[
-                    styles.severityButtonText,
-                    severity === level && styles.severityButtonTextActive,
-                  ]}
-                >
-                  {level}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <SegmentedButtons
+            value={String(severity)}
+            onValueChange={(value) => setSeverity(Number(value))}
+            buttons={[
+              { value: '1', label: '1' },
+              { value: '2', label: '2' },
+              { value: '3', label: '3' },
+              { value: '4', label: '4' },
+              { value: '5', label: '5' },
+            ]}
+          />
           <Text style={styles.severityLabel}>{SEVERITY_LABELS[severity]}</Text>
         </View>
 
@@ -239,28 +253,25 @@ export default function LogScreen() {
         </View>
 
         {/* Save Button */}
-        <TouchableOpacity
+        <Button
+          mode="contained"
+          icon="check-circle"
           style={[styles.saveButton, !selectedTrigger && styles.saveButtonDisabled]}
+          contentStyle={styles.saveButtonContent}
+          labelStyle={styles.saveButtonText}
           onPress={handleSave}
           disabled={!selectedTrigger || loading}
         >
-          <MaterialCommunityIcons 
-            name="check-circle" 
-            size={24} 
-            color="#fff" 
-            style={styles.saveButtonIcon}
-          />
-          <Text style={styles.saveButtonText}>
-            {loading ? 'Saving...' : 'Log Trigger'}
-          </Text>
-        </TouchableOpacity>
+          {loading ? 'Saving...' : 'Log Trigger'}
+        </Button>
 
         {/* Recent Logs */}
         {recentLogs.length > 0 && (
           <View style={styles.recentLogsSection}>
             <Text style={styles.recentLogsTitle}>Recent Logs</Text>
             {recentLogs.map((log) => (
-              <View key={log.id} style={styles.logItem}>
+              <Card key={log.id} style={styles.logItem}>
+                <Card.Content style={styles.logItemContent}>
                 <Text style={styles.logEmoji}>{getTriggerEmoji(log.trigger_type)}</Text>
                 <View style={styles.logDetails}>
                   <Text style={styles.logType}>
@@ -272,10 +283,12 @@ export default function LogScreen() {
                   </Text>
                 </View>
                 <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
-              </View>
+                </Card.Content>
+              </Card>
             ))}
           </View>
         )}
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -284,24 +297,24 @@ export default function LogScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F4F7FB',
   },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#475569',
     marginBottom: 32,
   },
   section: {
@@ -310,7 +323,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: '#334155',
     marginBottom: 12,
   },
   triggersGrid: {
@@ -319,46 +332,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   triggerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
     borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    minWidth: '45%',
-  },
-  triggerEmoji: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  triggerLabel: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  severityContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  severityButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  severityButtonActive: {
-    backgroundColor: '#7C3AED',
-  },
-  severityButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  severityButtonTextActive: {
-    color: '#fff',
+    borderColor: '#D9E2EC',
+    minWidth: 140,
   },
   severityLabel: {
     marginTop: 12,
@@ -375,43 +356,39 @@ const styles = StyleSheet.create({
   distanceInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E2EC',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: '#1F2937',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
   },
   distanceUnit: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#475569',
     fontWeight: '500',
   },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#D9E2EC',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: '#1F2937',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     minHeight: 100,
   },
   saveButton: {
-    backgroundColor: '#7C3AED',
-    paddingVertical: 18,
+    backgroundColor: '#1D4ED8',
     borderRadius: 12,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
     marginTop: 8,
     marginBottom: 32,
   },
-  saveButtonDisabled: {
-    backgroundColor: '#D1D5DB',
+  saveButtonContent: {
+    paddingVertical: 8,
   },
-  saveButtonIcon: {
-    marginRight: 8,
+  saveButtonDisabled: {
+    backgroundColor: '#94A3B8',
   },
   saveButtonText: {
     color: '#fff',
@@ -420,23 +397,24 @@ const styles = StyleSheet.create({
   },
   recentLogsSection: {
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: '#D9E2EC',
     paddingTop: 24,
   },
   recentLogsTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: '#0F172A',
     marginBottom: 16,
   },
   logItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  logItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    marginBottom: 8,
   },
   logEmoji: {
     fontSize: 24,
@@ -448,16 +426,16 @@ const styles = StyleSheet.create({
   logType: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#374151',
+    color: '#334155',
   },
   logMeta: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#64748B',
     marginTop: 2,
   },
   logTime: {
     fontSize: 13,
-    color: '#9CA3AF',
+    color: '#94A3B8',
     fontWeight: '500',
   },
 });
