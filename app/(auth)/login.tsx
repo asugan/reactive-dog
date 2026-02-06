@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TextInput, Button, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { loginWithEmail } from '../../lib/pocketbase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -11,15 +11,12 @@ export default function LoginScreen() {
 
   async function signInWithEmail() {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-    } else {
+    try {
+      await loginWithEmail(email, password);
       router.replace('/(tabs)');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Login failed';
+      alert(message);
     }
     setLoading(false);
   }

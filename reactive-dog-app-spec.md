@@ -64,7 +64,7 @@ Reactive dog owners face:
    - Tap-to-view details (trigger type, severity, date)
    - Legend showing trigger type colors
 ✅ PDF export for behaviorists (professional reports) - Implemented with:
-   - HTML-based report generation via Supabase Edge Function
+   - HTML-based report generation
    - Professional layout with dog profile, statistics, and logs
    - Shareable PDF via native print/share dialogs
 ```
@@ -92,8 +92,7 @@ Reactive dog owners face:
 - TypeScript
 
 // Backend
-- Supabase (Auth, PostgreSQL, Storage)
-- Edge Functions for PDF generation
+- PocketBase (Auth, Database, Storage)
 
 // Maps & Location
 - expo-location (GPS tracking)
@@ -138,11 +137,9 @@ app/
 │   └── technique.tsx     # Training method recommendation
 ├── _layout.tsx           # Root with auth/onboarding guards
 ├── lib/
-│   ├── supabase.ts       # Supabase client
+│   ├── pocketbase.ts     # PocketBase client
 │   └── posthog.ts        # PostHog config
-└── supabase/
-    └── migrations/
-        └── 001_initial_schema.sql
+└── pocketbase_collections.json
 ```
 
 ---
@@ -188,7 +185,7 @@ app/
    - **BAT** (Behavior Adjustment Training) - For dogs who bark/lunge
    - **CC/DS** (Counter-Conditioning/Desensitization) - For fearful/anxious dogs
    - **LAT** (Look at That) - For dogs who stare intensely
-6. **Auto-save:** Dog profile saved to Supabase with recommended technique
+6. **Auto-save:** Dog profile saved to PocketBase with recommended technique
 
 ### Daily Usage
 1. **Morning:** Check dashboard for yesterday's summary
@@ -381,7 +378,7 @@ please consult a certified professional.
 - [x] Create wireframes (Figma)
 - [x] Design database schema
 - [x] Set up Expo project
-- [x] Supabase project setup
+- [x] PocketBase setup and schema import
 - [x] Implement onboarding screens
 
 ### Month 2: MVP Development (✅ Completed)
@@ -404,6 +401,7 @@ please consult a certified professional.
   - Anonymous forum with post types
   - Win of the Day, Questions, Success Stories
   - Like system and filtering
+- [x] PocketBase migration (✅ Completed - Feb 2026)
 - [ ] RevenueCat integration
 - [ ] Beta program (50 users)
 - [ ] Content creation
@@ -421,7 +419,7 @@ please consult a certified professional.
 ### Tools
 - Figma (design)
 - Expo (development)
-- Supabase (backend)
+- PocketBase (backend)
 - RevenueCat (payments)
 - PostHog (analytics)
 
@@ -445,7 +443,7 @@ The combination of practical training tools + emotional support community create
 
 **Status Update (January 2026):** MVP is now feature-complete with all core functionality implemented:
 
-✅ **Supabase Backend** - Auth, database, and RLS policies configured
+✅ **PocketBase Backend** - Auth and collections configured
 ✅ **Onboarding Flow** - 5-screen flow with automatic routing
 ✅ **Trigger Logging** - Quick 2-tap logging with GPS coordinates
 ✅ **Progress Analytics** - Interactive charts, time range selection, statistics cards
@@ -459,6 +457,7 @@ The combination of practical training tools + emotional support community create
 **Next Priorities:**
 1. ✅ **Community forum implementation** - Complete with anonymous posts, Win of the Day, Questions, Success Stories, and like system
 2. ✅ **PDF export for behaviorist reports** - Complete with professional report generation
-3. Beta testing program launch
-4. PostHog analytics integration
-5. RevenueCat subscription setup
+3. ✅ **PocketBase Migration** - Complete removal of Supabase and migration to PocketBase
+4. Beta testing program launch
+5. PostHog analytics integration
+6. RevenueCat subscription setup

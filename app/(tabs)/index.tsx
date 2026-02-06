@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 // TODO: PostHog - import { usePostHog } from 'posthog-react-native';
 
@@ -36,77 +36,60 @@ export default function Dashboard() {
 
   const fetchDogProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('dog_profiles')
-        .select('name')
-        .eq('owner_id', user.id)
-        .single();
+      const records = await pb.collection('dog_profiles').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching dog profile:', error);
-        return;
+      if (records.items.length > 0) {
+        setDogProfile(records.items[0] as unknown as DogProfile);
       }
-
-      setDogProfile(data);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching dog profile:', error);
     }
   };
 
   const fetchRecentWalks = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('walks')
-        .select('*')
-        .eq('owner_id', user.id)
-        .order('started_at', { ascending: false })
-        .limit(3);
+      const records = await pb.collection('walks').getList(1, 3, {
+        filter: `owner_id = "${user.id}"`,
+        sort: '-started_at',
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching walks:', error);
-        return;
-      }
-
-      setRecentWalks(data || []);
+      setRecentWalks(records.items as unknown as Walk[]);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching walks:', error);
     }
   };
 
   const fetchStats = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
       // Get total walks count
-      const { count: totalCount, error: totalError } = await supabase
-        .from('walks')
-        .select('*', { count: 'exact', head: true })
-        .eq('owner_id', user.id);
-
-      if (totalError) {
-        console.error('Error fetching total walks:', totalError);
-      }
+      const totalResult = await pb.collection('walks').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
+      const totalCount = totalResult.totalItems;
 
       // Get this week's walks
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-      const { count: weekCount, error: weekError } = await supabase
-        .from('walks')
-        .select('*', { count: 'exact', head: true })
-        .eq('owner_id', user.id)
-        .gte('started_at', oneWeekAgo.toISOString());
-
-      if (weekError) {
-        console.error('Error fetching week walks:', weekError);
-      }
+      const weekResult = await pb.collection('walks').getList(1, 1, {
+        filter: `owner_id = "${user.id}" && started_at >= "${oneWeekAgo.toISOString()}"`,
+        requestKey: null,
+      });
+      const weekCount = weekResult.totalItems;
 
       setStats({
         totalWalks: totalCount || 0,
@@ -117,7 +100,8 @@ export default function Dashboard() {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
@@ -125,7 +109,8 @@ export default function Dashboard() {
     });
   };
 
-  const formatDuration = (start: string, end: string | null) => {
+  const formatDuration = (start: string | null | undefined, end: string | null | undefined) => {
+    if (!start) return '';
     if (!end) return 'In progress';
     const startDate = new Date(start);
     const endDate = new Date(end);
@@ -241,12 +226,12 @@ export default function Dashboard() {
                       {formatDuration(walk.started_at, walk.ended_at)}
                     </Text>
                   </View>
-                  {walk.success_rating && (
+                  {walk.success_rating != null && (
                     <Text style={styles.walkRating}>
                       {getSuccessStars(walk.success_rating)}
                     </Text>
                   )}
-                  {walk.technique_used && (
+                  {walk.technique_used != null && (
                     <View style={styles.techniqueBadge}>
                       <Text style={styles.techniqueText}>
                         {walk.technique_used.replace('_', ' ')}

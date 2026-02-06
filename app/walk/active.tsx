@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 
@@ -64,23 +64,19 @@ export default function ActiveWalkScreen() {
 
   const fetchDogProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('dog_profiles')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
+      const records = await pb.collection('dog_profiles').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching dog profile:', error);
-        return;
+      if (records.items.length > 0) {
+        setDogId(records.items[0].id);
       }
-
-      setDogId(data?.id || null);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching dog profile:', error);
     }
   };
 
@@ -167,12 +163,9 @@ export default function ActiveWalkScreen() {
           onPress: async () => {
             try {
               // Update walk with end time
-              await supabase
-                .from('walks')
-                .update({ 
-                  ended_at: new Date().toISOString(),
-                })
-                .eq('id', walkId);
+              await pb.collection('walks').update(walkId as string, {
+                ended_at: new Date().toISOString(),
+              });
 
               // Navigate to summary
               router.push({
@@ -204,30 +197,23 @@ export default function ActiveWalkScreen() {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) {
         Alert.alert('Error', 'Not authenticated');
         return;
       }
 
       // Log trigger during walk
-      const { error } = await supabase
-        .from('trigger_logs')
-        .insert({
-          dog_id: dogId,
-          owner_id: user.id,
-          trigger_type: selectedTrigger,
-          severity: selectedSeverity,
-          location_latitude: location?.latitude,
-          location_longitude: location?.longitude,
-          notes: `Logged during BAT walk session`,
-        });
-
-      if (error) {
-        console.error('Error logging trigger:', error);
-        Alert.alert('Error', 'Failed to log trigger');
-        return;
-      }
+      await pb.collection('trigger_logs').create({
+        dog_id: dogId,
+        owner_id: user.id,
+        trigger_type: selectedTrigger,
+        severity: selectedSeverity,
+        location_latitude: location?.latitude || null,
+        location_longitude: location?.longitude || null,
+        notes: 'Logged during BAT walk session',
+        logged_at: new Date().toISOString(),
+      });
 
       // Update log count
       setLogCount(prev => prev + 1);
@@ -306,7 +292,7 @@ export default function ActiveWalkScreen() {
         {/* Technique Reminder Card */}
         <View style={styles.reminderCard}>
           <View style={styles.reminderIconContainer}>
-            <MaterialCommunityIcons name={reminder.icon as any} size={32} color="#7C3AED" />
+            <MaterialCommunityIcons name={reminder.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={32} color="#7C3AED" />
           </View>
           <View style={styles.reminderContent}>
             <Text style={styles.reminderTitle}>{reminder.title}</Text>

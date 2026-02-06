@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const TECHNIQUE_OPTIONS = [
@@ -59,21 +59,16 @@ export default function WalkSetupScreen() {
 
   const fetchDogProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('dog_profiles')
-        .select('id, name, triggers, training_method')
-        .eq('owner_id', user.id)
-        .single();
+      const records = await pb.collection('dog_profiles').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching dog profile:', error);
-        return;
-      }
-
-      if (data) {
+      if (records.items.length > 0) {
+        const data = records.items[0] as unknown as DogProfile;
         setDogProfile(data);
         // Pre-select technique based on dog's training method
         if (data.training_method === 'BAT') {
@@ -83,7 +78,7 @@ export default function WalkSetupScreen() {
         }
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching dog profile:', error);
     }
   };
 
@@ -117,28 +112,19 @@ export default function WalkSetupScreen() {
 
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) {
         Alert.alert('Error', 'Not authenticated');
         return;
       }
 
       // Create walk record
-      const { data: walk, error } = await supabase
-        .from('walks')
-        .insert({
-          dog_id: dogProfile.id,
-          owner_id: user.id,
-          distance_threshold_meters: distanceThreshold,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating walk:', error);
-        Alert.alert('Error', 'Failed to start walk session');
-        return;
-      }
+      const walk = await pb.collection('walks').create({
+        dog_id: dogProfile.id,
+        owner_id: user.id,
+        distance_threshold_meters: distanceThreshold,
+        started_at: new Date().toISOString(),
+      });
 
       // Navigate to active walk screen
       router.push({
@@ -299,7 +285,7 @@ export default function WalkSetupScreen() {
                 onPress={() => setSelectedTechnique(technique.id)}
               >
                 <MaterialCommunityIcons 
-                  name={technique.icon as any} 
+                  name={technique.icon as keyof typeof MaterialCommunityIcons.glyphMap} 
                   size={28} 
                   color={selectedTechnique === technique.id ? '#7C3AED' : '#6B7280'} 
                 />

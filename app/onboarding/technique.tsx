@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 
 const TECHNIQUES: Record<string, {
   name: string;
@@ -61,20 +61,17 @@ export default function TechniqueScreen() {
   const handleComplete = async () => {
     try {
       // Update dog profile with recommended technique
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       
       if (user) {
-        const { data: dogProfile } = await supabase
-          .from('dog_profiles')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
+        const dogProfiles = await pb.collection('dog_profiles').getList(1, 1, {
+          filter: `owner_id = "${user.id}"`,
+        });
         
-        if (dogProfile) {
-          await supabase
-            .from('dog_profiles')
-            .update({ training_method: technique })
-            .eq('id', dogProfile.id);
+        if (dogProfiles.items.length > 0) {
+          await pb.collection('dog_profiles').update(dogProfiles.items[0].id, {
+            training_method: technique,
+          });
         }
       }
     } catch (error) {

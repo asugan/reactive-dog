@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser, initializePocketBase } from '../../lib/pocketbase';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dogs (off-leash)', emoji: '🐕' },
@@ -37,33 +37,36 @@ export default function DogProfileScreen() {
     
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Direct check from pb.authStore which is the source of truth
+      let user = pb.authStore.model;
       
       if (!user) {
-        console.error('No user found');
+        // Try one more time after a small delay or re-initialization
+        await initializePocketBase();
+        user = pb.authStore.model;
+      }
+      
+      if (!user) {
+        alert('Authentication session not found. Please log in again.');
+        router.replace('/(auth)/login');
         return;
       }
 
-      const { error } = await supabase
-        .from('dog_profiles')
-        .insert({
-          owner_id: user.id,
-          name: name.trim(),
-          breed: breed.trim() || null,
-          age: age ? parseInt(age) : null,
-          weight: weight ? parseFloat(weight) : null,
-          triggers: selectedTriggers,
-          reactivity_level: reactivityLevel,
-        });
-
-      if (error) {
-        console.error('Error saving dog profile:', error);
-        return;
-      }
+      await pb.collection('dog_profiles').create({
+        owner_id: user.id,
+        name: name.trim(),
+        breed: breed.trim() || '',
+        age: age ? parseInt(age) : 0,
+        weight: weight ? parseFloat(weight) : 0,
+        triggers: selectedTriggers,
+        reactivity_level: reactivityLevel,
+      });
 
       router.push('/onboarding/assessment');
-    } catch (error) {
-      console.error('Error:', error);
+    } catch (error: unknown) {
+      console.error('Error saving dog profile:', error);
+      const message = error instanceof Error ? error.message : 'Failed to save dog profile';
+      alert(message);
     } finally {
       setLoading(false);
     }

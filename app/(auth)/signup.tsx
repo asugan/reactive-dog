@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TextInput, Button, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { signUpWithEmail, loginWithEmail } from '../../lib/pocketbase';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -9,19 +9,25 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  async function signUpWithEmail() {
+  async function handleSignUpWithEmail() {
+    if (loading) return;
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-    } else {
-      router.replace('/(tabs)');
+    try {
+      await signUpWithEmail(email, password, password);
+      const authData = await loginWithEmail(email, password);
+      
+      if (authData?.token) {
+        // Give AsyncStorage a tiny moment to settle before navigating
+        setTimeout(() => {
+          router.replace('/onboarding');
+        }, 100);
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Sign up failed';
+      alert(message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -44,7 +50,7 @@ export default function SignupScreen() {
       />
       <Button
         title={loading ? 'Loading...' : 'Sign Up'}
-        onPress={signUpWithEmail}
+        onPress={handleSignUpWithEmail}
         disabled={loading}
       />
       

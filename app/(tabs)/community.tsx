@@ -13,7 +13,7 @@ import {
   Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 interface CommunityPost {
@@ -22,10 +22,12 @@ interface CommunityPost {
   content: string;
   post_type: 'general' | 'win_of_the_day' | 'question' | 'success_story';
   likes_count: number;
-  created_at: string;
+  created: string;
   author_id: string;
-  profiles?: {
-    username: string;
+  expand?: {
+    author_id?: {
+      username: string;
+    };
   };
 }
 
@@ -79,7 +81,7 @@ export default function CommunityScreen() {
 
   const fetchUserId = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       setUserId(user?.id || null);
     } catch (error) {
       console.error('Error fetching user:', error);
@@ -90,28 +92,21 @@ export default function CommunityScreen() {
     try {
       setLoading(true);
       
-      let query = supabase
-        .from('community_posts')
-        .select(`
-          *,
-          profiles:author_id (username)
-        `)
-        .order('created_at', { ascending: false });
-
+      let filter = '';
       if (activeFilter !== 'all') {
-        query = query.eq('post_type', activeFilter);
+        filter = `post_type = "${activeFilter}"`;
       }
 
-      const { data, error } = await query;
+      const records = await pb.collection('community_posts').getList(1, 100, {
+        filter,
+        sort: '-created',
+        expand: 'author_id',
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching posts:', error);
-        return;
-      }
-
-      setPosts(data || []);
+      setPosts(records.items as unknown as CommunityPost[]);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching posts:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -131,27 +126,20 @@ export default function CommunityScreen() {
 
     try {
       setSubmitting(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       
       if (!user) {
         Alert.alert('Error', 'You must be logged in to post');
         return;
       }
 
-      const { error } = await supabase
-        .from('community_posts')
-        .insert({
-          author_id: user.id,
-          title: newPostTitle.trim(),
-          content: newPostContent.trim(),
-          post_type: newPostType,
-        });
-
-      if (error) {
-        console.error('Error creating post:', error);
-        Alert.alert('Error', 'Failed to create post. Please try again.');
-        return;
-      }
+      await pb.collection('community_posts').create({
+        author_id: user.id,
+        title: newPostTitle.trim(),
+        content: newPostContent.trim(),
+        post_type: newPostType,
+        likes_count: 0,
+      });
 
       // Reset form and close modal
       setNewPostTitle('');
@@ -164,33 +152,29 @@ export default function CommunityScreen() {
       
       Alert.alert('Success', 'Your post has been published!');
     } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      console.error('Error creating post:', error);
+      Alert.alert('Error', 'Failed to create post. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleLikePost = async (postId: string, currentLikes: number) => {
+  const handleLikePost = async (postId: string) => {
     try {
-      const { error } = await supabase
-        .from('community_posts')
-        .update({ likes_count: currentLikes + 1 })
-        .eq('id', postId);
-
-      if (error) {
-        console.error('Error liking post:', error);
-        return;
-      }
+      await pb.collection('community_posts').update(postId, {
+        'likes_count+': 1,
+      });
 
       // Update local state
-      setPosts(posts.map(post => 
-        post.id === postId 
-          ? { ...post, likes_count: currentLikes + 1 }
-          : post
-      ));
+      setPosts(prevPosts =>
+        prevPosts.map(post =>
+          post.id === postId
+            ? { ...post, likes_count: post.likes_count + 1 }
+            : post
+        )
+      );
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error liking post:', error);
     }
   };
 
@@ -257,12 +241,12 @@ export default function CommunityScreen() {
       <View key={post.id} style={styles.postCard}>
         <View style={styles.postHeader}>
           <View style={[styles.postTypeBadge, { backgroundColor: config.bgColor }]}>
-            <MaterialCommunityIcons name={config.icon as any} size={14} color={config.color} />
+            <MaterialCommunityIcons name={config.icon as keyof typeof MaterialCommunityIcons.glyphMap} size={14} color={config.color} />
             <Text style={[styles.postTypeText, { color: config.color }]}>
               {config.label}
             </Text>
           </View>
-          <Text style={styles.postDate}>{formatDate(post.created_at)}</Text>
+          <Text style={styles.postDate}>{formatDate(post.created)}</Text>
         </View>
         
         <Text style={styles.postTitle}>{post.title}</Text>
@@ -278,7 +262,7 @@ export default function CommunityScreen() {
           
           <TouchableOpacity 
             style={styles.likeButton}
-            onPress={() => handleLikePost(post.id, post.likes_count)}
+            onPress={() => handleLikePost(post.id)}
           >
             <MaterialCommunityIcons 
               name={post.likes_count > 0 ? "heart" : "heart-outline"} 
@@ -392,10 +376,10 @@ export default function CommunityScreen() {
                         borderWidth: 2
                       }
                     ]}
-                    onPress={() => setNewPostType(type as any)}
+                    onPress={() => setNewPostType(type as 'general' | 'win_of_the_day' | 'question' | 'success_story')}
                   >
                     <MaterialCommunityIcons 
-                      name={config.icon as any} 
+                      name={config.icon as keyof typeof MaterialCommunityIcons.glyphMap} 
                       size={20} 
                       color={config.color} 
                     />

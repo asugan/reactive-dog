@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
+import { AuthModel, RecordModel } from "pocketbase";
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
-import MapView, { Marker, Circle } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -102,29 +103,23 @@ export default function ProgressScreen() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
       const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
-      const { data, error } = await supabase
-        .from('trigger_logs')
-        .select('id, trigger_type, severity, distance_meters, logged_at, location_latitude, location_longitude')
-        .eq('owner_id', user.id)
-        .gte('logged_at', cutoffDate.toISOString())
-        .order('logged_at', { ascending: true });
+      const records = await pb.collection('trigger_logs').getFullList({
+        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
+        sort: 'logged_at',
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching logs:', error);
-        return;
-      }
-
-      setLogs(data || []);
-      calculateStats(data || []);
+      setLogs(records as unknown as TriggerLog[]);
+      calculateStats(records as unknown as TriggerLog[]);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching logs:', error);
     } finally {
       setLoading(false);
     }
@@ -247,31 +242,48 @@ export default function ProgressScreen() {
   const generateReport = async () => {
     try {
       setExporting(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) {
         Alert.alert('Error', 'You must be logged in to generate reports');
         return;
       }
 
-      // Call the edge function
-      const { data, error } = await supabase.functions.invoke('generate-report', {
-        body: { userId: user.id, timeRange },
+      // Fetch dog profile
+      const dogResult = await pb.collection('dog_profiles').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
+      const dogProfile = dogResult.items[0];
+
+      // Fetch logs for report
+      const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+
+      const logsResult = await pb.collection('trigger_logs').getFullList({
+        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
+        sort: '-logged_at',
+        requestKey: null,
       });
 
-      if (error) {
-        console.error('Error calling edge function:', error);
-        Alert.alert('Error', 'Failed to generate report. Please try again.');
-        return;
-      }
+      // Fetch walks for report
+      const walksResult = await pb.collection('walks').getFullList({
+        filter: `owner_id = "${user.id}" && started_at >= "${cutoffDate.toISOString()}"`,
+        sort: '-started_at',
+        requestKey: null,
+      });
 
-      if (!data || !data.html) {
-        Alert.alert('Error', 'No report data received');
-        return;
-      }
+      // Generate report HTML
+      const html = generateReportHTML(
+        dogProfile,
+        logsResult as unknown as TriggerLog[],
+        walksResult,
+        timeRange
+      );
 
       // Generate PDF from HTML
       const { uri } = await Print.printToFileAsync({
-        html: data.html,
+        html,
         base64: false,
       });
 
@@ -279,7 +291,7 @@ export default function ProgressScreen() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
-          dialogTitle: `${data.reportData?.dogName || 'Dog'} - Training Report`,
+          dialogTitle: `${dogProfile?.name || 'Dog'} - Training Report`,
           UTI: 'com.adobe.pdf',
         });
       } else {
@@ -291,6 +303,105 @@ export default function ProgressScreen() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const generateReportHTML = (
+    dogProfile: AuthModel | null,
+    logs: TriggerLog[],
+    walks: RecordModel[],
+    timeRange: string
+  ) => {
+    const timeRangeLabel = timeRange === '7days' ? 'Last 7 Days' : timeRange === '30days' ? 'Last 30 Days' : 'Last 90 Days';
+    
+    // Calculate stats
+    const totalLogs = logs.length;
+    const avgSeverity = totalLogs > 0 ? (logs.reduce((sum, log) => sum + log.severity, 0) / totalLogs).toFixed(1) : '0';
+    
+    // Most common trigger
+    const triggerCounts: { [key: string]: number } = {};
+    logs.forEach(log => {
+      triggerCounts[log.trigger_type] = (triggerCounts[log.trigger_type] || 0) + 1;
+    });
+    const mostCommon = Object.entries(triggerCounts)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    // Walk stats
+    const totalWalks = walks.length;
+    const completedWalks = walks.filter(w => w.ended_at).length;
+    const avgRating = completedWalks > 0 
+      ? (walks.filter(w => w.ended_at).reduce((sum, w) => sum + (w.success_rating || 0), 0) / completedWalks).toFixed(1)
+      : 'N/A';
+
+    return `
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; }
+            h1 { color: #7C3AED; }
+            h2 { color: #374151; margin-top: 30px; }
+            .stats { display: flex; gap: 20px; margin: 20px 0; }
+            .stat-box { background: #F3F4F6; padding: 20px; border-radius: 8px; flex: 1; }
+            .stat-value { font-size: 32px; font-weight: bold; color: #7C3AED; }
+            .stat-label { color: #6B7280; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #EDE9FE; padding: 12px; text-align: left; }
+            td { padding: 12px; border-bottom: 1px solid #E5E7EB; }
+            .footer { margin-top: 40px; color: #9CA3AF; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>🐕 ${dogProfile?.name || 'Dog'} Training Report</h1>
+          <p>Generated on ${new Date().toLocaleDateString()} | ${timeRangeLabel}</p>
+          
+          <h2>Overview</h2>
+          <div class="stats">
+            <div class="stat-box">
+              <div class="stat-value">${totalLogs}</div>
+              <div class="stat-label">Total Reactions</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-value">${avgSeverity}</div>
+              <div class="stat-label">Avg Severity</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-value">${totalWalks}</div>
+              <div class="stat-label">Walks Completed</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-value">${avgRating}</div>
+              <div class="stat-label">Avg Walk Rating</div>
+            </div>
+          </div>
+
+          ${mostCommon ? `
+          <h2>Most Common Trigger</h2>
+          <p>${TRIGGER_LABELS[mostCommon[0]]} (${mostCommon[1]} incidents)</p>
+          ` : ''}
+
+          <h2>Recent Activity</h2>
+          <table>
+            <tr>
+              <th>Date</th>
+              <th>Trigger</th>
+              <th>Severity</th>
+              <th>Distance</th>
+            </tr>
+            ${logs.slice(0, 10).map(log => `
+              <tr>
+                <td>${new Date(log.logged_at).toLocaleDateString()}</td>
+                <td>${TRIGGER_LABELS[log.trigger_type] || log.trigger_type}</td>
+                <td>${log.severity}/5</td>
+                <td>${log.distance_meters ? log.distance_meters + 'm' : 'N/A'}</td>
+              </tr>
+            `).join('')}
+          </table>
+
+          <div class="footer">
+            Generated by Reactive Dog App | Keep up the great work! 🐾
+          </div>
+        </body>
+      </html>
+    `;
   };
 
   const chartConfig = {
@@ -419,7 +530,7 @@ export default function ProgressScreen() {
             <View style={styles.insightContent}>
               <Text style={styles.insightTitle}>Most Common Trigger</Text>
               <Text style={styles.insightText}>
-                {TRIGGER_LABELS[stats.mostCommonTrigger]}
+                {TRIGGER_LABELS[stats.mostCommonTrigger] || stats.mostCommonTrigger}
               </Text>
             </View>
           </View>
@@ -483,7 +594,7 @@ export default function ProgressScreen() {
                   <Text style={styles.severityText}>{log.severity}</Text>
                 </View>
                 <View style={styles.recentDetails}>
-                  <Text style={styles.recentType}>{TRIGGER_LABELS[log.trigger_type]}</Text>
+                  <Text style={styles.recentType}>{TRIGGER_LABELS[log.trigger_type] || log.trigger_type}</Text>
                   <Text style={styles.recentDate}>
                     {new Date(log.logged_at).toLocaleDateString('en-US', { 
                       month: 'short', 
@@ -550,7 +661,7 @@ export default function ProgressScreen() {
                         longitude: log.location_longitude!,
                       }}
                       pinColor={TRIGGER_COLORS[log.trigger_type] || '#6B7280'}
-                      title={TRIGGER_LABELS[log.trigger_type]}
+                      title={TRIGGER_LABELS[log.trigger_type] || log.trigger_type}
                       description={`Severity: ${log.severity} | ${new Date(log.logged_at).toLocaleDateString()}`}
                     />
                   ))}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
+import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const TRIGGER_OPTIONS = [
@@ -47,46 +47,36 @@ export default function LogScreen() {
 
   const fetchDogProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('dog_profiles')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
+      const records = await pb.collection('dog_profiles').getList(1, 1, {
+        filter: `owner_id = "${user.id}"`,
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching dog profile:', error);
-        return;
+      if (records.items.length > 0) {
+        setDogId(records.items[0].id);
       }
-
-      setDogId(data?.id || null);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching dog profile:', error);
     }
   };
 
   const fetchRecentLogs = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('trigger_logs')
-        .select('*')
-        .eq('owner_id', user.id)
-        .order('logged_at', { ascending: false })
-        .limit(5);
+      const records = await pb.collection('trigger_logs').getList(1, 5, {
+        filter: `owner_id = "${user.id}"`,
+        sort: '-logged_at',
+        requestKey: null,
+      });
 
-      if (error) {
-        console.error('Error fetching recent logs:', error);
-        return;
-      }
-
-      setRecentLogs(data || []);
+      setRecentLogs(records.items as unknown as TriggerLog[]);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching recent logs:', error);
     }
   };
 
@@ -103,28 +93,21 @@ export default function LogScreen() {
 
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = getCurrentUser();
       if (!user) {
         Alert.alert('Error', 'Not authenticated');
         return;
       }
 
-      const { error } = await supabase
-        .from('trigger_logs')
-        .insert({
-          dog_id: dogId,
-          owner_id: user.id,
-          trigger_type: selectedTrigger,
-          severity: severity,
-          distance_meters: distance ? parseFloat(distance) : null,
-          notes: notes.trim() || null,
-        });
-
-      if (error) {
-        console.error('Error saving trigger log:', error);
-        Alert.alert('Error', 'Failed to save log. Please try again.');
-        return;
-      }
+      await pb.collection('trigger_logs').create({
+        dog_id: dogId,
+        owner_id: user.id,
+        trigger_type: selectedTrigger,
+        severity: severity,
+        distance_meters: distance ? parseFloat(distance) : null,
+        notes: notes.trim() || null,
+        logged_at: new Date().toISOString(),
+      });
 
       // Reset form
       setSelectedTrigger(null);
@@ -137,8 +120,8 @@ export default function LogScreen() {
 
       Alert.alert('Success', 'Trigger logged successfully!');
     } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Error', 'An unexpected error occurred');
+      console.error('Error saving trigger log:', error);
+      Alert.alert('Error', 'Failed to save log. Please try again.');
     } finally {
       setLoading(false);
     }

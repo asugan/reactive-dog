@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { supabase } from '../../lib/supabase';
+import { pb } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const SUCCESS_LABELS: { [key: number]: string } = {
@@ -41,20 +41,11 @@ export default function WalkSummaryScreen() {
     setLoading(true);
     try {
       // Update walk with summary data
-      const { error } = await supabase
-        .from('walks')
-        .update({
-          success_rating: successRating,
-          technique_used: techniqueUsed,
-          notes: notes.trim() || null,
-        })
-        .eq('id', walkId);
-
-      if (error) {
-        console.error('Error updating walk:', error);
-        Alert.alert('Error', 'Failed to save walk summary');
-        return;
-      }
+      await pb.collection('walks').update(walkId as string, {
+        success_rating: successRating,
+        technique_used: techniqueUsed,
+        notes: notes.trim() || null,
+      });
 
       // Show celebration
       Alert.alert(
@@ -69,7 +60,7 @@ export default function WalkSummaryScreen() {
       );
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An unexpected error occurred');
+      Alert.alert('Error', 'Failed to save walk summary');
     } finally {
       setLoading(false);
     }
@@ -164,7 +155,7 @@ export default function WalkSummaryScreen() {
                 onPress={() => setTechniqueUsed(technique.id)}
               >
                 <MaterialCommunityIcons 
-                  name={technique.icon as any} 
+                  name={technique.icon as keyof typeof MaterialCommunityIcons.glyphMap} 
                   size={24} 
                   color={techniqueUsed === technique.id ? '#7C3AED' : '#6B7280'} 
                 />

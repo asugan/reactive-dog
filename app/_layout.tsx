@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { supabase } from '../lib/supabase';
+import { pb, initializePocketBase, isAuthenticated, subscribeToAuthChanges } from '../lib/pocketbase';
 // TODO: PostHog - import { PostHogProvider } from '../lib/posthog';
 
 function useProtectedRoute() {
@@ -12,31 +12,35 @@ function useProtectedRoute() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      await initializePocketBase();
       
-      if (!session) {
+      if (!isAuthenticated()) {
         // Not authenticated, should be in auth group
         if (segments[0] !== '(auth)') {
           router.replace('/(auth)/login');
         }
       } else {
         // Authenticated, check if they have a dog profile
-        const { data: dogProfiles } = await supabase
-          .from('dog_profiles')
-          .select('id')
-          .eq('owner_id', session.user.id)
-          .limit(1);
-        
-        const hasDogProfile = dogProfiles && dogProfiles.length > 0;
-        const inOnboarding = segments[0] === 'onboarding';
-        const inAuth = segments[0] === '(auth)';
-        
-        if (!hasDogProfile && !inOnboarding && !inAuth) {
-          // No dog profile and not in onboarding, redirect to onboarding
-          router.replace('/onboarding');
-        } else if (hasDogProfile && (inOnboarding || inAuth)) {
-          // Has dog profile but in onboarding or auth, redirect to main app
-          router.replace('/(tabs)');
+        const userId = pb.authStore.model?.id;
+        try {
+          const dogProfiles = await pb.collection('dog_profiles').getList(1, 1, {
+            filter: `owner_id = "${userId}"`,
+            $autoCancel: false,
+          });
+          
+          const hasDogProfile = dogProfiles.items.length > 0;
+          const inOnboarding = segments[0] === 'onboarding';
+          const inAuth = segments[0] === '(auth)';
+          
+          if (!hasDogProfile && !inOnboarding && !inAuth) {
+            // No dog profile and not in onboarding, redirect to onboarding
+            router.replace('/onboarding');
+          } else if (hasDogProfile && (inOnboarding || inAuth)) {
+            // Has dog profile but in onboarding or auth, redirect to main app
+            router.replace('/(tabs)');
+          }
+        } catch (error) {
+          console.error('Error checking dog profile:', error);
         }
       }
       
@@ -46,13 +50,13 @@ function useProtectedRoute() {
     checkAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
+    const unsubscribe = subscribeToAuthChanges(() => {
+      if (!isAuthenticated()) {
         router.replace('/(auth)/login');
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, [segments]);
 
   return isReady;

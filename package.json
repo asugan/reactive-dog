@@ -13,7 +13,6 @@
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/stack": "^7.7.0",
-    "@supabase/supabase-js": "^2.93.3",
     "expo": "~54.0.33",
     "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.16",
@@ -21,6 +20,7 @@
     "expo-router": "^6.0.23",
     "expo-sharing": "^14.0.8",
     "expo-status-bar": "~3.0.9",
+    "pocketbase": "^0.26.8",
     "posthog-react-native": "^4.27.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
@@ -34,7 +34,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
-    "supabase": "^2.75.0",
     "typescript": "~5.9.2"
   },
   "private": true

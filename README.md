@@ -5,7 +5,7 @@ Mobile app for owners of reactive dogs (dogs that bark, lunge, or exhibit aggres
 ## Tech Stack
 
 - **Frontend:** React Native with Expo (TypeScript)
-- **Backend:** Supabase (Auth, PostgreSQL, Storage, Edge Functions)
+- **Backend:** PocketBase (Auth, Database, Storage)
 - **Maps:** expo-location, react-native-maps
 - **UI:** react-native-paper
 - **Charts:** react-native-chart-kit
@@ -41,11 +41,8 @@ app/
 │   ├── assessment.tsx    # Reactivity quiz
 │   └── technique.tsx     # Training method recommendation
 ├── _layout.tsx           # Root layout with auth/onboarding routing
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql
 ├── lib/
-│   ├── supabase.ts       # Supabase client
+│   ├── pocketbase.ts     # PocketBase client
 │   └── posthog.ts        # PostHog config
 └── .env.example
 ```
@@ -59,38 +56,21 @@ cd reactive-dog
 npm install
 ```
 
-### 2. Supabase Setup
+### 2. PocketBase Setup
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Copy your project URL and anon key
-3. Run the SQL migration in `supabase/migrations/001_initial_schema.sql` in the Supabase SQL editor
+1. Download and run [PocketBase](https://pocketbase.io/)
+2. Access the Admin UI (typically at `http://localhost:8090/_/`)
+3. Go to **Settings** -> **Import collections** and use `pocketbase_collections.json`
 4. Create `.env` file:
 
 ```bash
 cp .env.example .env
 ```
 
-5. Fill in your Supabase credentials in `.env`:
+5. Fill in your PocketBase URL in `.env`:
 
 ```
-EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-6. Deploy the PDF report edge function (optional, for PDF export feature):
-
-```bash
-# Install Supabase CLI if not already installed
-npm install -g supabase
-
-# Login to Supabase
-supabase login
-
-# Link your project
-supabase link --project-ref your-project-ref
-
-# Deploy the edge function
-supabase functions deploy generate-report
+EXPO_PUBLIC_POCKETBASE_URL=http://your-pocketbase-url:8090
 ```
 
 ### 3. PostHog Setup
@@ -115,21 +95,21 @@ npx expo start
 ## Features
 
 ### MVP (V1) - Implementation Status
-- ✅ **Supabase Backend** - Auth, database, and RLS policies configured
+- ✅ **PocketBase Backend** - Auth and collections configured
 - ✅ **Dog Profile Onboarding** - Multi-step flow with:
   - Welcome screen with statistics
   - Dog profile creation (name, breed, age, weight)
   - Trigger selection (Dogs, Humans, Bikes, Cars, Noise, Other)
   - Reactivity level assessment (1-5 scale)
   - Training method matching quiz (BAT, CC/DS, LAT)
-  - Automatic Supabase integration
+  - Automatic PocketBase integration
 - ✅ **Trigger Logging** - Quick 2-tap logging with:
   - Trigger type selection (Dog off/on-leash, Human, Bike, Car, Noise, Other)
   - Severity rating (1-5 scale with color coding)
   - Distance tracking (meters)
   - Optional notes
   - Recent logs display
-  - Automatic Supabase sync
+  - Automatic PocketBase sync
 - ✅ **Progress Analytics** - Charts & statistics with:
   - Time range selector (7/30/90 days)
   - Line chart: Reactions over time
@@ -175,16 +155,16 @@ npx expo start
 
 ### Database Schema
 
-The app uses the following tables:
-- `profiles` - User profiles (extends auth.users)
+The app uses the following collections in PocketBase:
+- `user_profiles` - Extended user info
 - `dog_profiles` - Dog information and triggers
 - `trigger_logs` - Reaction logs with location, severity
 - `walks` - BAT session tracking
 - `community_posts` - Forum posts
 
-### Row Level Security
+### API Rules
 
-All tables have RLS enabled with policies ensuring:
+All collections have API rules configured ensuring:
 - Users can only access their own dog and trigger data
 - Community posts are readable by everyone but only editable by author
 - Profile data is viewable by all but only editable by owner
@@ -192,8 +172,8 @@ All tables have RLS enabled with policies ensuring:
 ## Development Status
 
 ### Completed ✅
-- [x] Set up Supabase project and run migrations
-- [x] Configure Supabase client and RLS policies
+- [x] Set up PocketBase collections and import schema
+- [x] Configure PocketBase client and API rules
 - [x] Implement dog profile onboarding flow (5 screens)
 - [x] Auth routing with automatic onboarding redirect
 
@@ -207,7 +187,7 @@ All tables have RLS enabled with policies ensuring:
 
 ## Resources
 
-- [Supabase Docs](https://supabase.com/docs)
+- [PocketBase Docs](https://pocketbase.io/docs)
 - [Expo Docs](https://docs.expo.dev)
 - [PostHog React Native](https://posthog.com/docs/libraries/react-native)
 - [React Native Paper](https://callstack.github.io/react-native-paper/)
