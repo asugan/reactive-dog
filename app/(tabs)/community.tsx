@@ -476,11 +476,11 @@ export default function CommunityScreen() {
 
       if (!enabled) {
         if (existingRecord) {
-          await pb.collection('community_owner_locations').update(existingRecord.id, {
-            is_visible: false,
-          });
+          await pb.collection('community_owner_locations').delete(existingRecord.id);
         }
         setLocationSharingEnabled(false);
+        setMyLocationPoint(null);
+        await fetchNearbyOwners();
         return;
       }
 
@@ -502,24 +502,26 @@ export default function CommunityScreen() {
 
       setMyLocationPoint({ latitude, longitude });
 
-      const payload = {
-        owner_id: user.id,
-        latitude,
-        longitude,
-        is_visible: true,
-        share_precision_m: LOCATION_PRECISION_METERS,
-      };
-
       if (existingRecord) {
-        await pb.collection('community_owner_locations').update(existingRecord.id, payload);
+        await pb.collection('community_owner_locations').update(existingRecord.id, {
+          latitude,
+          longitude,
+          is_visible: true,
+        });
       } else {
-        await pb.collection('community_owner_locations').create(payload);
+        await pb.collection('community_owner_locations').create({
+          owner_id: user.id,
+          latitude,
+          longitude,
+          is_visible: true,
+          share_precision_m: LOCATION_PRECISION_METERS,
+        });
       }
 
       setLocationSharingEnabled(true);
       await fetchNearbyOwners();
     } catch (error: any) {
-      console.error('Error updating location sharing:', error);
+      console.error('Error updating location sharing:', error?.response?.data || error);
 
       if (error?.status === 404) {
         Alert.alert(
