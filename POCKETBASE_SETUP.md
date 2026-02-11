@@ -12,18 +12,13 @@ Successfully migrated from Supabase SQL migrations to PocketBase JSON collection
 ## Collections Structure
 
 ### 1. user_profiles
-Extended user information with subscription management.
+Extended user information.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | text | Auto-generated unique ID |
 | user | relation | Reference to users collection (1-to-1) |
 | subscription_tier | select | Values: `free`, `premium` |
-| subscription_expires_at | date | Premium expiry timestamp cache |
-| subscription_source | select | Values: `none`, `revenuecat`, `manual` |
-| revenuecat_app_user_id | text | RevenueCat app user id cache |
-| revenuecat_last_event | text | Last processed RevenueCat event type |
-| revenuecat_last_event_at | date | Last RevenueCat event timestamp |
 | full_name | text | User's display name |
 | username | text | Unique username |
 | created | autodate | Creation timestamp |
@@ -114,22 +109,6 @@ Community forum posts.
 
 **Relations:**
 - `author_id` → `users` (cascade delete)
-
-### 6. billing_webhook_events
-Raw RevenueCat webhook event storage (admin-only).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| id | text | Auto-generated unique ID |
-| event_type | text | RevenueCat event type |
-| app_user_id | text | RevenueCat app user id |
-| user | relation | Optional link to users collection |
-| payload | json | Raw webhook payload |
-| processed | bool | Whether event is processed |
-| processed_at | date | Processing timestamp |
-| processing_error | text | Last processing error (if any) |
-| created | autodate | Creation timestamp |
-| updated | autodate | Last update timestamp |
 
 ## Import Instructions
 

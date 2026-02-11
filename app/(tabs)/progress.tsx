@@ -10,7 +10,7 @@ import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
-import { hasPremiumAccessWithFallback } from '../../lib/billing/access';
+import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
 
 const { width } = Dimensions.get('window');
 const ACCENT_COLOR = '#1D4ED8';
@@ -157,7 +157,7 @@ export default function ProgressScreen() {
   useEffect(() => {
     const checkPremium = async () => {
       try {
-        const allowed = await hasPremiumAccessWithFallback();
+        const allowed = await hasPremiumAccessFromRevenueCat();
         setIsPremium(allowed);
       } catch (error) {
         console.error('Error checking premium in progress screen:', error);

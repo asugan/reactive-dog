@@ -5,8 +5,8 @@ import { router } from 'expo-router';
 import { Button, Card, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCurrentUser, logout } from '../../lib/pocketbase';
-import { getCustomerInfo, getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
-import { hasPremiumAccessWithFallback } from '../../lib/billing/access';
+import { getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
+import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
 
 export default function SettingsScreen() {
   const user = getCurrentUser();
@@ -20,24 +20,8 @@ export default function SettingsScreen() {
     setSubscriptionError(null);
 
     try {
-      const customerInfo = await getCustomerInfo();
-      if (!customerInfo) {
-        const fallbackAccess = await hasPremiumAccessWithFallback();
-        setIsPremium(fallbackAccess);
-        if (!fallbackAccess) {
-          setSubscriptionError('RevenueCat henuz yapilandirilmamis gorunuyor.');
-        }
-        return;
-      }
-
-      const access = hasPremiumAccess(customerInfo);
-      if (access) {
-        setIsPremium(true);
-        return;
-      }
-
-      const fallbackAccess = await hasPremiumAccessWithFallback();
-      setIsPremium(fallbackAccess);
+      const access = await hasPremiumAccessFromRevenueCat();
+      setIsPremium(access);
     } catch (error) {
       console.error('Failed to load subscription status', error);
       setSubscriptionError('Abonelik durumu alinamadi. Lutfen tekrar deneyin.');

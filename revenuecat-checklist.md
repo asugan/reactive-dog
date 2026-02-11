@@ -40,16 +40,11 @@ Bu checklist, `revenuecat-yol-haritasi.md` dokumanini uygulama adimlarina ceviri
 - [ ] `purchase_error` eventi eklendi
 - [ ] `restore_success` eventi eklendi
 
-## Faz 5 - Backend ve Senkronizasyon (Opsiyonel ama onerilir)
+## Faz 5 - Mobil-Only Premium Kontrol
 
-- [x] RevenueCat webhook endpoint'i PocketBase tarafinda hazirlandi
-- [x] `INITIAL_PURCHASE` event handling tamamlandi
-- [x] `RENEWAL` event handling tamamlandi
-- [x] `CANCELLATION` event handling tamamlandi
-- [x] `EXPIRATION` event handling tamamlandi
-- [x] `user_profiles` RevenueCat cache alanlari eklendi
-- [x] `billing_webhook_events` koleksiyonu eklendi
-- [x] Client tarafinda profile fallback (`subscription_tier`) eklendi
+- [x] Client tarafinda RevenueCat entitlement kontrol helper'i eklendi
+- [x] Premium gate kontrolu sadece RevenueCat SDK sonucuna baglandi
+- [x] PocketBase webhook/fallback bagimliligi kaldirildi
 
 ## Faz 6 - QA ve Release
 

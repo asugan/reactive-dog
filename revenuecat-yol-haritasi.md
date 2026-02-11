@@ -49,15 +49,10 @@ Bu dokuman, `reactive-dog` (Expo + React Native + PocketBase) projesine RevenueC
 - Paywall ekraninda teklifler RevenueCat offering'den canli cekilsin.
 - Ilk surumde basit ve olculebilir akisa odaklan; A/B optimizasyonu sonraki iterasyona kalabilir.
 
-## 6) Sunucu Tarafi Dogrulama ve Senkronizasyon (Opsiyonel ama onerilir, 1 gun)
+## 6) V2 Opsiyonel Sunucu Entegrasyonu (1 gun)
 
-- RevenueCat webhook event'lerini PocketBase backend'e dusur:
-  - `INITIAL_PURCHASE`
-  - `RENEWAL`
-  - `CANCELLATION`
-  - `EXPIRATION`
-- PocketBase user profile tarafinda entitlement cache alani tut (hiz + offline faydasi).
-- Client acilisinda RevenueCat'ten dogrulama yap; server cache'i eventual consistency icin kullan.
+- Ilk surumde premium kararini tamamen mobil RevenueCat SDK ile ver.
+- Backend event senkronizasyonu sadece raporlama/operasyon ihtiyaci olusursa sonraki fazda ele al.
 
 ## 7) Olcumleme ve Deney Takibi (0.5 gun)
 

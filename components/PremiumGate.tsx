@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { ActivityIndicator, Button, Card } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { hasPremiumAccessWithFallback } from '../lib/billing/access';
+import { hasPremiumAccessFromRevenueCat } from '../lib/billing/access';
 
 interface PremiumGateProps {
   children: ReactNode;
@@ -21,7 +21,7 @@ export function PremiumGate({ children, featureName, description, source }: Prem
 
     const checkAccess = async () => {
       try {
-        const allowed = await hasPremiumAccessWithFallback();
+        const allowed = await hasPremiumAccessFromRevenueCat();
         if (!mounted) {
           return;
         }
