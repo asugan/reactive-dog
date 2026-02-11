@@ -8,6 +8,7 @@ import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { create as createTriggerLog } from '../../lib/data/repositories/triggerLogRepo';
 import { update as updateWalk } from '../../lib/data/repositories/walkRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
+import { cancelReminderById, scheduleActiveWalkCheckInReminder } from '../../lib/notifications/notificationService';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dog Off-leash', emoji: '🐕' },
@@ -23,8 +24,20 @@ interface LocationData {
   longitude: number;
 }
 
+const getSingleParam = (value: string | string[] | undefined) => {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+};
+
 export default function ActiveWalkScreen() {
   const { walkId, distanceThreshold, technique } = useLocalSearchParams();
+  const distanceThresholdParam = getSingleParam(distanceThreshold);
+  const distanceThresholdValue = Number(distanceThresholdParam);
+  const safeDistanceThreshold = Number.isFinite(distanceThresholdValue) ? distanceThresholdValue : 15;
+  const techniqueParam = getSingleParam(technique);
   const [dogId, setDogId] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [duration, setDuration] = useState(0);
@@ -37,6 +50,7 @@ export default function ActiveWalkScreen() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const reminderNotificationIdRef = useRef<string | null>(null);
 
   // Pulse animation for active indicator
   useEffect(() => {
@@ -138,6 +152,52 @@ export default function ActiveWalkScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncWalkCheckInReminder = async () => {
+      if (!isActive) {
+        if (reminderNotificationIdRef.current) {
+          await cancelReminderById(reminderNotificationIdRef.current);
+          reminderNotificationIdRef.current = null;
+        }
+        return;
+      }
+
+      if (reminderNotificationIdRef.current) {
+        return;
+      }
+
+      const reminderId = await scheduleActiveWalkCheckInReminder({
+        technique: techniqueParam,
+        distanceThreshold: safeDistanceThreshold,
+      });
+
+      if (!isMounted) {
+        await cancelReminderById(reminderId);
+        return;
+      }
+
+      reminderNotificationIdRef.current = reminderId;
+    };
+
+    syncWalkCheckInReminder().catch((error) => {
+      console.error('Error syncing walk check-in reminder:', error);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isActive, safeDistanceThreshold, techniqueParam]);
+
+  useEffect(() => {
+    return () => {
+      const reminderId = reminderNotificationIdRef.current;
+      reminderNotificationIdRef.current = null;
+      void cancelReminderById(reminderId);
+    };
+  }, []);
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -154,11 +214,16 @@ export default function ActiveWalkScreen() {
       'Your progress will be saved. You can add final notes on the next screen.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
+        {
           text: 'End Walk', 
           style: 'destructive',
           onPress: async () => {
             try {
+              if (reminderNotificationIdRef.current) {
+                await cancelReminderById(reminderNotificationIdRef.current);
+                reminderNotificationIdRef.current = null;
+              }
+
               // Update walk with end time
               await updateWalk(walkId as string, {
                 ended_at: new Date().toISOString(),
@@ -228,7 +293,7 @@ export default function ActiveWalkScreen() {
   };
 
   const getTechniqueReminder = () => {
-    switch (technique) {
+    switch (techniqueParam) {
       case 'U_Turn':
         return {
           icon: 'arrow-u-left-top',
@@ -303,7 +368,7 @@ export default function ActiveWalkScreen() {
           <View style={styles.alertContent}>
             <Text style={styles.alertTitle}>Distance Alert</Text>
             <Text style={styles.alertText}>
-              Will alert when trigger is within {distanceThreshold}m
+              Will alert when trigger is within {safeDistanceThreshold}m
             </Text>
           </View>
         </View>

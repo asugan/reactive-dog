@@ -26,6 +26,7 @@ The app now runs fully local on the device:
 - Onboarding flow: dog profile + assessment + technique recommendation
 - Quick trigger logging: type, severity, distance, notes
 - BAT walk mode: setup, active walk, quick logging, summary
+- Local notifications: weekly BAT reminders and active-walk check-ins
 - Progress analytics: charts, heatmap, trigger map, PDF export (premium)
 - Settings: local data export/import (JSON) and full local data reset
 

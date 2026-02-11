@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { create as createWalk } from '../../lib/data/repositories/walkRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
+import { syncWeeklyPlanReminders } from '../../lib/notifications/notificationService';
 
 const TECHNIQUE_OPTIONS = [
   { 
@@ -60,6 +61,10 @@ const WEEK_DAYS = [
 ];
 
 const WEEKLY_GOAL_OPTIONS = [2, 3, 4, 5, 6, 7];
+const DEFAULT_WEEKLY_PLAN: WeeklyPlan = {
+  plannedDays: ['Mon', 'Wed', 'Fri'],
+  weeklyGoal: 3,
+};
 
 export default function WalkSetupScreen() {
   const [dogProfile, setDogProfile] = useState<DogProfile | null>(null);
@@ -72,26 +77,30 @@ export default function WalkSetupScreen() {
     calm: false,
   });
   const [ownerId, setOwnerId] = useState<string | null>(null);
-  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({
-    plannedDays: ['Mon', 'Wed', 'Fri'],
-    weeklyGoal: 3,
-  });
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>(DEFAULT_WEEKLY_PLAN);
   const [loading, setLoading] = useState(false);
 
   const loadWeeklyPlan = useCallback(async (userId: string) => {
     try {
       const stored = await AsyncStorage.getItem(`bat_weekly_plan_${userId}`);
-      if (!stored) return;
+      if (!stored) {
+        return DEFAULT_WEEKLY_PLAN;
+      }
 
       const parsed = JSON.parse(stored) as WeeklyPlan;
       if (Array.isArray(parsed.plannedDays) && typeof parsed.weeklyGoal === 'number') {
-        setWeeklyPlan({
+        const loadedPlan = {
           plannedDays: parsed.plannedDays.filter((day) => WEEK_DAYS.some((weekDay) => weekDay.key === day)),
           weeklyGoal: parsed.weeklyGoal,
-        });
+        };
+        setWeeklyPlan(loadedPlan);
+        return loadedPlan;
       }
+
+      return DEFAULT_WEEKLY_PLAN;
     } catch (error) {
       console.error('Error loading weekly BAT plan:', error);
+      return DEFAULT_WEEKLY_PLAN;
     }
   }, []);
 
@@ -99,7 +108,7 @@ export default function WalkSetupScreen() {
     try {
       const localOwnerId = await getLocalOwnerId();
       setOwnerId(localOwnerId);
-      await loadWeeklyPlan(localOwnerId);
+      const loadedPlan = await loadWeeklyPlan(localOwnerId);
 
       const data = await getByOwnerId(localOwnerId);
       if (data) {
@@ -111,6 +120,12 @@ export default function WalkSetupScreen() {
           setSelectedTechnique('LAT');
         }
       }
+
+      await syncWeeklyPlanReminders({
+        plannedDays: loadedPlan.plannedDays,
+        dogName: data?.name,
+        requestPermissionIfNeeded: false,
+      });
     } catch (error) {
       console.error('Error fetching dog profile:', error);
     }
@@ -125,6 +140,11 @@ export default function WalkSetupScreen() {
 
     try {
       await AsyncStorage.setItem(`bat_weekly_plan_${ownerId}`, JSON.stringify(nextPlan));
+      await syncWeeklyPlanReminders({
+        plannedDays: nextPlan.plannedDays,
+        dogName: dogProfile?.name,
+        requestPermissionIfNeeded: false,
+      });
     } catch (error) {
       console.error('Error saving weekly BAT plan:', error);
     }

@@ -8,6 +8,7 @@ import { getLocalOwnerId, initializeLocalApp } from '../lib/localApp';
 import { AnimatedSplashScreen } from '../components/AnimatedSplashScreen';
 import { SubscriptionProvider } from '../lib/billing/subscription';
 import { PostHogProvider } from '../lib/posthog';
+import { initializeNotifications } from '../lib/notifications/notificationService';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore if splash screen was already prevented.
@@ -135,6 +136,12 @@ function useProtectedRoute() {
 function RootLayoutNav() {
   const isReady = useProtectedRoute();
   const [isSplashDone, setIsSplashDone] = useState(false);
+
+  useEffect(() => {
+    initializeNotifications().catch((error) => {
+      console.error('Notification initialization failed:', error);
+    });
+  }, []);
 
   const handleSplashComplete = useCallback(() => {
     SplashScreen.hideAsync().finally(() => {

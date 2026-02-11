@@ -4,12 +4,37 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Button, Card, Divider, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearAllLocalData, exportLocalData, importLocalData } from '../../lib/data/repositories/settingsRepo';
 import { getPremiumInsightMeterState, MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT } from '../../lib/billing/premiumInsights';
 import { getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
 import { useSubscription } from '../../lib/billing/subscription';
 import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
 import { getLocalOwnerId } from '../../lib/localApp';
+import {
+  getNotificationPermissionStatus,
+  getWeeklyReminderTime,
+  requestNotificationPermission,
+  sendTestNotification,
+  setWeeklyReminderTime,
+  syncWeeklyPlanReminders,
+} from '../../lib/notifications/notificationService';
+
+interface WeeklyPlan {
+  plannedDays: string[];
+  weeklyGoal: number;
+}
+
+const DEFAULT_WEEKLY_PLAN_DAYS = ['Mon', 'Wed', 'Fri'];
+const REMINDER_TIME_PRESETS = [
+  { label: '08:00', hour: 8, minute: 0 },
+  { label: '12:00', hour: 12, minute: 0 },
+  { label: '19:00', hour: 19, minute: 0 },
+];
+
+const formatReminderTime = (hour: number, minute: number) => {
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+};
 
 export default function SettingsScreen() {
   const [ownerId, setOwnerId] = useState<string>('-');
@@ -30,6 +55,11 @@ export default function SettingsScreen() {
   const [lastExportPreview, setLastExportPreview] = useState<string | null>(null);
   const [insightPreviewRemaining, setInsightPreviewRemaining] = useState(MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT);
   const [insightPreviewUsed, setInsightPreviewUsed] = useState(0);
+  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(false);
+  const [enablingNotifications, setEnablingNotifications] = useState(false);
+  const [sendingNotificationTest, setSendingNotificationTest] = useState(false);
+  const [weeklyReminderTime, setWeeklyReminderTimeState] = useState({ hour: 19, minute: 0 });
+  const [updatingReminderTime, setUpdatingReminderTime] = useState(false);
 
   const refreshOwnerId = useCallback(async () => {
     const localOwnerId = await getLocalOwnerId();
@@ -53,6 +83,42 @@ export default function SettingsScreen() {
       setInsightPreviewUsed(meter.used);
     } catch (error) {
       console.error('Failed to load insight preview meter', error);
+    }
+  }, []);
+
+  const refreshNotificationPermission = useCallback(async () => {
+    try {
+      const granted = await getNotificationPermissionStatus();
+      setNotificationPermissionGranted(granted);
+    } catch (error) {
+      console.error('Failed to load notification permission status', error);
+    }
+  }, []);
+
+  const refreshWeeklyReminderTime = useCallback(async () => {
+    try {
+      const reminderTime = await getWeeklyReminderTime();
+      setWeeklyReminderTimeState(reminderTime);
+    } catch (error) {
+      console.error('Failed to load weekly reminder time', error);
+    }
+  }, []);
+
+  const getStoredWeeklyPlanDays = useCallback(async (localOwnerId: string) => {
+    try {
+      const raw = await AsyncStorage.getItem(`bat_weekly_plan_${localOwnerId}`);
+      if (!raw) {
+        return DEFAULT_WEEKLY_PLAN_DAYS;
+      }
+
+      const parsed = JSON.parse(raw) as WeeklyPlan;
+      if (!Array.isArray(parsed.plannedDays) || parsed.plannedDays.length === 0) {
+        return DEFAULT_WEEKLY_PLAN_DAYS;
+      }
+
+      return parsed.plannedDays;
+    } catch {
+      return DEFAULT_WEEKLY_PLAN_DAYS;
     }
   }, []);
 
@@ -81,7 +147,122 @@ export default function SettingsScreen() {
     refreshInsightPreviewMeter().catch((error) => {
       console.error('Failed to load insight preview state', error);
     });
-  }, [loadSubscriptionStatus, refreshInsightPreviewMeter, refreshOwnerId]);
+    refreshNotificationPermission().catch((error) => {
+      console.error('Failed to load notification permission state', error);
+    });
+    refreshWeeklyReminderTime().catch((error) => {
+      console.error('Failed to load reminder time state', error);
+    });
+  }, [
+    loadSubscriptionStatus,
+    refreshInsightPreviewMeter,
+    refreshNotificationPermission,
+    refreshOwnerId,
+    refreshWeeklyReminderTime,
+  ]);
+
+  const handleEnableNotifications = async () => {
+    setEnablingNotifications(true);
+
+    try {
+      const granted = await requestNotificationPermission();
+      setNotificationPermissionGranted(granted);
+
+      if (!granted) {
+        Alert.alert(
+          'Permission needed',
+          'Notifications are currently disabled. You can enable them from your device settings.'
+        );
+        return;
+      }
+
+      const localOwnerId = await getLocalOwnerId();
+      const plannedDays = await getStoredWeeklyPlanDays(localOwnerId);
+      const result = await syncWeeklyPlanReminders({
+        plannedDays,
+        requestPermissionIfNeeded: false,
+      });
+
+      Alert.alert(
+        'Notifications enabled',
+        result.scheduledCount > 0
+          ? `${result.scheduledCount} weekly BAT reminder(s) scheduled at ${formatReminderTime(
+              weeklyReminderTime.hour,
+              weeklyReminderTime.minute
+            )}.`
+          : 'Permission granted. Weekly reminders will be scheduled once you pick planned days.'
+      );
+    } catch (error) {
+      console.error('Failed to enable notifications', error);
+      Alert.alert('Notification error', 'Could not enable notifications. Please try again.');
+    } finally {
+      setEnablingNotifications(false);
+    }
+  };
+
+  const handleSendNotificationTest = async () => {
+    setSendingNotificationTest(true);
+
+    try {
+      const sent = await sendTestNotification();
+      if (!sent) {
+        Alert.alert(
+          'Notifications disabled',
+          'Please enable notification permission first to receive a test notification.'
+        );
+        return;
+      }
+
+      Alert.alert('Test sent', 'A notification should appear shortly.');
+    } catch (error) {
+      console.error('Failed to send test notification', error);
+      Alert.alert('Notification error', 'Could not send test notification. Please try again.');
+    } finally {
+      setSendingNotificationTest(false);
+    }
+  };
+
+  const handleReminderTimeChange = async (hour: number, minute: number) => {
+    if (weeklyReminderTime.hour === hour && weeklyReminderTime.minute === minute) {
+      return;
+    }
+
+    setUpdatingReminderTime(true);
+
+    try {
+      await setWeeklyReminderTime({ hour, minute });
+      setWeeklyReminderTimeState({ hour, minute });
+
+      const localOwnerId = await getLocalOwnerId();
+      const plannedDays = await getStoredWeeklyPlanDays(localOwnerId);
+      const result = await syncWeeklyPlanReminders({
+        plannedDays,
+        requestPermissionIfNeeded: false,
+        reminderHour: hour,
+        reminderMinute: minute,
+      });
+
+      if (!result.permissionGranted) {
+        Alert.alert(
+          'Time saved',
+          `Weekly reminder time is now ${formatReminderTime(hour, minute)}. Notifications are disabled, so reminders are not scheduled yet.`
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Reminder time updated',
+        result.scheduledCount > 0
+          ? `${result.scheduledCount} weekly reminder(s) rescheduled for ${formatReminderTime(hour, minute)}.`
+          : 'No planned days selected yet. Pick BAT days to start reminders.'
+      );
+    } catch (error) {
+      console.error('Failed to update reminder time', error);
+      Alert.alert('Notification error', 'Could not update reminder time. Please try again.');
+    } finally {
+      setUpdatingReminderTime(false);
+    }
+  };
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
@@ -182,7 +363,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Manage local data and subscription preferences</Text>
+        <Text style={styles.subtitle}>Manage local data, subscription, and notifications</Text>
 
         <View style={styles.profileCard}>
           <View style={styles.avatarWrap}>
@@ -333,6 +514,66 @@ export default function SettingsScreen() {
                 </View>
               </View>
             ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.sectionCard}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Status</Text>
+              <Text style={[styles.rowValue, notificationPermissionGranted ? styles.premiumText : styles.freeText]}>
+                {notificationPermissionGranted ? 'Enabled' : 'Disabled'}
+              </Text>
+            </View>
+            <Divider style={styles.divider} />
+            <Text style={styles.notificationHintText}>
+              Weekly BAT plan reminders and active walk check-ins use local Expo notifications.
+            </Text>
+            <View style={[styles.row, styles.reminderTimeRow]}>
+              <Text style={styles.rowLabel}>Weekly reminder time</Text>
+              <Text style={styles.rowValue}>{formatReminderTime(weeklyReminderTime.hour, weeklyReminderTime.minute)}</Text>
+            </View>
+            <View style={styles.reminderTimeButtonsRow}>
+              {REMINDER_TIME_PRESETS.map((preset) => {
+                const isActive =
+                  weeklyReminderTime.hour === preset.hour && weeklyReminderTime.minute === preset.minute;
+
+                return (
+                  <Button
+                    key={preset.label}
+                    mode={isActive ? 'contained' : 'outlined'}
+                    compact
+                    style={styles.reminderTimeButton}
+                    onPress={() => handleReminderTimeChange(preset.hour, preset.minute)}
+                    disabled={updatingReminderTime || enablingNotifications || sendingNotificationTest}
+                  >
+                    {preset.label}
+                  </Button>
+                );
+              })}
+            </View>
+
+            <View style={styles.dataActions}>
+              <Button
+                mode="contained"
+                style={styles.dataActionButton}
+                onPress={handleEnableNotifications}
+                loading={enablingNotifications}
+                disabled={enablingNotifications || sendingNotificationTest || updatingReminderTime}
+              >
+                {notificationPermissionGranted ? 'Re-check Permission' : 'Enable Notifications'}
+              </Button>
+              <Button
+                mode="outlined"
+                style={styles.dataActionButton}
+                onPress={handleSendNotificationTest}
+                loading={sendingNotificationTest}
+                disabled={sendingNotificationTest || enablingNotifications || updatingReminderTime}
+              >
+                Send Test
+              </Button>
+            </View>
           </Card.Content>
         </Card>
       </ScrollView>
@@ -506,5 +747,22 @@ const styles = StyleSheet.create({
   },
   premiumPlansButton: {
     marginTop: 0,
+  },
+  notificationHintText: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  reminderTimeRow: {
+    marginTop: 10,
+  },
+  reminderTimeButtonsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reminderTimeButton: {
+    minWidth: 82,
   },
 });
