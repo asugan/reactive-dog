@@ -365,81 +365,63 @@ export default function SettingsScreen() {
         <Text style={styles.title}>Settings</Text>
         <Text style={styles.subtitle}>Manage local data, subscription, and notifications</Text>
 
-        <View style={styles.profileCard}>
-          <View style={styles.avatarWrap}>
-            <MaterialCommunityIcons name="cellphone-lock" size={26} color="#0F766E" />
-          </View>
-          <View style={styles.profileMeta}>
-            <Text style={styles.profileTitle}>This Device</Text>
-            <Text style={styles.profileEmail}>Owner ID: {ownerId}</Text>
-          </View>
-        </View>
-
         <Card style={styles.sectionCard}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Local Data</Text>
+            <Text style={styles.sectionTitle}>Notifications</Text>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Storage</Text>
-              <Text style={styles.rowValue}>On-device SQLite</Text>
+              <Text style={styles.rowLabel}>Status</Text>
+              <Text style={[styles.rowValue, notificationPermissionGranted ? styles.premiumText : styles.freeText]}>
+                {notificationPermissionGranted ? 'Enabled' : 'Disabled'}
+              </Text>
             </View>
             <Divider style={styles.divider} />
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Local owner id</Text>
-              <Text style={styles.rowValue}>{ownerId}</Text>
+            <Text style={styles.notificationHintText}>
+              Weekly BAT plan reminders and active walk check-ins use local Expo notifications.
+            </Text>
+            <View style={[styles.row, styles.reminderTimeRow]}>
+              <Text style={styles.rowLabel}>Weekly reminder time</Text>
+              <Text style={styles.rowValue}>{formatReminderTime(weeklyReminderTime.hour, weeklyReminderTime.minute)}</Text>
+            </View>
+            <View style={styles.reminderTimeButtonsRow}>
+              {REMINDER_TIME_PRESETS.map((preset) => {
+                const isActive =
+                  weeklyReminderTime.hour === preset.hour && weeklyReminderTime.minute === preset.minute;
+
+                return (
+                  <Button
+                    key={preset.label}
+                    mode={isActive ? 'contained' : 'outlined'}
+                    compact
+                    style={styles.reminderTimeButton}
+                    onPress={() => handleReminderTimeChange(preset.hour, preset.minute)}
+                    disabled={updatingReminderTime || enablingNotifications || sendingNotificationTest}
+                  >
+                    {preset.label}
+                  </Button>
+                );
+              })}
             </View>
 
             <View style={styles.dataActions}>
               <Button
                 mode="contained"
                 style={styles.dataActionButton}
-                onPress={handleExportData}
-                loading={exportingData}
-                disabled={exportingData || importingData}
+                onPress={handleEnableNotifications}
+                loading={enablingNotifications}
+                disabled={enablingNotifications || sendingNotificationTest || updatingReminderTime}
               >
-                Export JSON
+                {notificationPermissionGranted ? 'Re-check Permission' : 'Enable Notifications'}
               </Button>
               <Button
                 mode="outlined"
                 style={styles.dataActionButton}
-                onPress={() => setShowImportEditor((value) => !value)}
-                disabled={importingData || exportingData}
+                onPress={handleSendNotificationTest}
+                loading={sendingNotificationTest}
+                disabled={sendingNotificationTest || enablingNotifications || updatingReminderTime}
               >
-                {showImportEditor ? 'Hide Import' : 'Import JSON'}
+                Send Test
               </Button>
             </View>
-
-            {showImportEditor ? (
-              <View style={styles.importWrap}>
-                <TextInput
-                  mode="outlined"
-                  label="Paste exported JSON"
-                  multiline
-                  value={importJson}
-                  onChangeText={setImportJson}
-                  style={styles.importInput}
-                />
-                <Button mode="contained" onPress={handleImportData} loading={importingData} disabled={importingData || exportingData}>
-                  Import now
-                </Button>
-              </View>
-            ) : null}
-
-            {lastExportPreview ? (
-              <View style={styles.previewCard}>
-                <Text style={styles.previewTitle}>Last export preview</Text>
-                <Text style={styles.previewText}>{lastExportPreview}...</Text>
-              </View>
-            ) : null}
-
-            <Button
-              mode="contained"
-              buttonColor="#DC2626"
-              style={styles.deleteButton}
-              onPress={handleDeleteAllData}
-              disabled={importingData || exportingData}
-            >
-              Delete all local data
-            </Button>
           </Card.Content>
         </Card>
 
@@ -517,63 +499,81 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
+        <View style={styles.profileCard}>
+          <View style={styles.avatarWrap}>
+            <MaterialCommunityIcons name="cellphone-lock" size={26} color="#0F766E" />
+          </View>
+          <View style={styles.profileMeta}>
+            <Text style={styles.profileTitle}>This Device</Text>
+            <Text style={styles.profileEmail}>Owner ID: {ownerId}</Text>
+          </View>
+        </View>
+
         <Card style={styles.sectionCard}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Notifications</Text>
+            <Text style={styles.sectionTitle}>Local Data</Text>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Status</Text>
-              <Text style={[styles.rowValue, notificationPermissionGranted ? styles.premiumText : styles.freeText]}>
-                {notificationPermissionGranted ? 'Enabled' : 'Disabled'}
-              </Text>
+              <Text style={styles.rowLabel}>Storage</Text>
+              <Text style={styles.rowValue}>On-device SQLite</Text>
             </View>
             <Divider style={styles.divider} />
-            <Text style={styles.notificationHintText}>
-              Weekly BAT plan reminders and active walk check-ins use local Expo notifications.
-            </Text>
-            <View style={[styles.row, styles.reminderTimeRow]}>
-              <Text style={styles.rowLabel}>Weekly reminder time</Text>
-              <Text style={styles.rowValue}>{formatReminderTime(weeklyReminderTime.hour, weeklyReminderTime.minute)}</Text>
-            </View>
-            <View style={styles.reminderTimeButtonsRow}>
-              {REMINDER_TIME_PRESETS.map((preset) => {
-                const isActive =
-                  weeklyReminderTime.hour === preset.hour && weeklyReminderTime.minute === preset.minute;
-
-                return (
-                  <Button
-                    key={preset.label}
-                    mode={isActive ? 'contained' : 'outlined'}
-                    compact
-                    style={styles.reminderTimeButton}
-                    onPress={() => handleReminderTimeChange(preset.hour, preset.minute)}
-                    disabled={updatingReminderTime || enablingNotifications || sendingNotificationTest}
-                  >
-                    {preset.label}
-                  </Button>
-                );
-              })}
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Local owner id</Text>
+              <Text style={styles.rowValue}>{ownerId}</Text>
             </View>
 
             <View style={styles.dataActions}>
               <Button
                 mode="contained"
                 style={styles.dataActionButton}
-                onPress={handleEnableNotifications}
-                loading={enablingNotifications}
-                disabled={enablingNotifications || sendingNotificationTest || updatingReminderTime}
+                onPress={handleExportData}
+                loading={exportingData}
+                disabled={exportingData || importingData}
               >
-                {notificationPermissionGranted ? 'Re-check Permission' : 'Enable Notifications'}
+                Export JSON
               </Button>
               <Button
                 mode="outlined"
                 style={styles.dataActionButton}
-                onPress={handleSendNotificationTest}
-                loading={sendingNotificationTest}
-                disabled={sendingNotificationTest || enablingNotifications || updatingReminderTime}
+                onPress={() => setShowImportEditor((value) => !value)}
+                disabled={importingData || exportingData}
               >
-                Send Test
+                {showImportEditor ? 'Hide Import' : 'Import JSON'}
               </Button>
             </View>
+
+            {showImportEditor ? (
+              <View style={styles.importWrap}>
+                <TextInput
+                  mode="outlined"
+                  label="Paste exported JSON"
+                  multiline
+                  value={importJson}
+                  onChangeText={setImportJson}
+                  style={styles.importInput}
+                />
+                <Button mode="contained" onPress={handleImportData} loading={importingData} disabled={importingData || exportingData}>
+                  Import now
+                </Button>
+              </View>
+            ) : null}
+
+            {lastExportPreview ? (
+              <View style={styles.previewCard}>
+                <Text style={styles.previewTitle}>Last export preview</Text>
+                <Text style={styles.previewText}>{lastExportPreview}...</Text>
+              </View>
+            ) : null}
+
+            <Button
+              mode="contained"
+              buttonColor="#DC2626"
+              style={styles.deleteButton}
+              onPress={handleDeleteAllData}
+              disabled={importingData || exportingData}
+            >
+              Delete all local data
+            </Button>
           </Card.Content>
         </Card>
       </ScrollView>

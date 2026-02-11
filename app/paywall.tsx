@@ -259,15 +259,15 @@ export default function PaywallScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.topActionRow}>
-          <Button compact mode="text" onPress={handleMaybeLater}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.headerIconWrap}>
+            <MaterialCommunityIcons name="dog-service" size={30} color="#1D4ED8" />
+          </View>
+          <Button compact mode="text" style={styles.maybeLaterButton} onPress={handleMaybeLater}>
             Maybe later
           </Button>
         </View>
 
-        <View style={styles.headerIconWrap}>
-          <MaterialCommunityIcons name="dog-service" size={30} color="#1D4ED8" />
-        </View>
         <Text style={styles.title}>Calmer Walks Premium</Text>
         <Text style={styles.subtitle}>Unlock {sourceLabel} with weekly coaching insights and long-range progress tools.</Text>
 
@@ -395,10 +395,11 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
-  topActionRow: {
+  heroTopRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
   headerIconWrap: {
     width: 56,
@@ -407,7 +408,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E0EDFF',
-    marginBottom: 14,
+  },
+  maybeLaterButton: {
+    marginRight: -6,
   },
   title: {
     fontSize: 30,

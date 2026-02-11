@@ -50,6 +50,11 @@ interface WeeklyPlan {
   weeklyGoal: number;
 }
 
+interface WalkSetupPreferences {
+  distanceThreshold: number;
+  technique: string;
+}
+
 const WEEK_DAYS = [
   { key: 'Mon', label: 'Mon' },
   { key: 'Tue', label: 'Tue' },
@@ -61,6 +66,9 @@ const WEEK_DAYS = [
 ];
 
 const WEEKLY_GOAL_OPTIONS = [2, 3, 4, 5, 6, 7];
+const DEFAULT_DISTANCE_THRESHOLD = 15;
+const DEFAULT_TECHNIQUE = 'U_Turn';
+const WALK_SETUP_STORAGE_KEY_PREFIX = 'bat_walk_setup_';
 const DEFAULT_WEEKLY_PLAN: WeeklyPlan = {
   plannedDays: ['Mon', 'Wed', 'Fri'],
   weeklyGoal: 3,
@@ -68,8 +76,8 @@ const DEFAULT_WEEKLY_PLAN: WeeklyPlan = {
 
 export default function WalkSetupScreen() {
   const [dogProfile, setDogProfile] = useState<DogProfile | null>(null);
-  const [distanceThreshold, setDistanceThreshold] = useState(15);
-  const [selectedTechnique, setSelectedTechnique] = useState<string>('U_Turn');
+  const [distanceThreshold, setDistanceThreshold] = useState(DEFAULT_DISTANCE_THRESHOLD);
+  const [selectedTechnique, setSelectedTechnique] = useState<string>(DEFAULT_TECHNIQUE);
   const [checklist, setChecklist] = useState({
     treats: false,
     harness: false,
@@ -104,20 +112,55 @@ export default function WalkSetupScreen() {
     }
   }, []);
 
+  const loadWalkSetupPreferences = useCallback(async (userId: string) => {
+    try {
+      const stored = await AsyncStorage.getItem(`${WALK_SETUP_STORAGE_KEY_PREFIX}${userId}`);
+      if (!stored) {
+        return { hasStoredTechnique: false };
+      }
+
+      const parsed = JSON.parse(stored) as Partial<WalkSetupPreferences>;
+      const validTechniques = TECHNIQUE_OPTIONS.map((technique) => technique.id);
+
+      const hasValidDistance =
+        typeof parsed.distanceThreshold === 'number' && DISTANCE_OPTIONS.includes(parsed.distanceThreshold);
+      const hasValidTechnique =
+        typeof parsed.technique === 'string' && validTechniques.includes(parsed.technique);
+      const nextDistance: number | null = hasValidDistance ? parsed.distanceThreshold as number : null;
+      const nextTechnique: string | null = hasValidTechnique ? parsed.technique as string : null;
+
+      if (nextDistance !== null) {
+        setDistanceThreshold(nextDistance);
+      }
+
+      if (nextTechnique !== null) {
+        setSelectedTechnique(nextTechnique);
+      }
+
+      return { hasStoredTechnique: hasValidTechnique };
+    } catch (error) {
+      console.error('Error loading walk setup preferences:', error);
+      return { hasStoredTechnique: false };
+    }
+  }, []);
+
   const fetchDogProfile = useCallback(async () => {
     try {
       const localOwnerId = await getLocalOwnerId();
       setOwnerId(localOwnerId);
       const loadedPlan = await loadWeeklyPlan(localOwnerId);
+      const walkSetupPreferences = await loadWalkSetupPreferences(localOwnerId);
 
       const data = await getByOwnerId(localOwnerId);
       if (data) {
         setDogProfile(data);
-        // Pre-select technique based on dog's training method
-        if (data.training_method === 'BAT') {
-          setSelectedTechnique('U_Turn');
-        } else if (data.training_method === 'LAT') {
-          setSelectedTechnique('LAT');
+        if (!walkSetupPreferences.hasStoredTechnique) {
+          // Pre-select technique based on dog's training method
+          if (data.training_method === 'BAT') {
+            setSelectedTechnique('U_Turn');
+          } else if (data.training_method === 'LAT') {
+            setSelectedTechnique('LAT');
+          }
         }
       }
 
@@ -129,17 +172,20 @@ export default function WalkSetupScreen() {
     } catch (error) {
       console.error('Error fetching dog profile:', error);
     }
-  }, [loadWeeklyPlan]);
+  }, [loadWalkSetupPreferences, loadWeeklyPlan]);
 
   useEffect(() => {
     fetchDogProfile();
   }, [fetchDogProfile]);
 
   const saveWeeklyPlan = async (nextPlan: WeeklyPlan) => {
-    if (!ownerId) return;
-
     try {
-      await AsyncStorage.setItem(`bat_weekly_plan_${ownerId}`, JSON.stringify(nextPlan));
+      const resolvedOwnerId = ownerId ?? await getLocalOwnerId();
+      if (!ownerId) {
+        setOwnerId(resolvedOwnerId);
+      }
+
+      await AsyncStorage.setItem(`bat_weekly_plan_${resolvedOwnerId}`, JSON.stringify(nextPlan));
       await syncWeeklyPlanReminders({
         plannedDays: nextPlan.plannedDays,
         dogName: dogProfile?.name,
@@ -147,6 +193,22 @@ export default function WalkSetupScreen() {
       });
     } catch (error) {
       console.error('Error saving weekly BAT plan:', error);
+    }
+  };
+
+  const saveWalkSetupPreferences = async (nextPreferences: WalkSetupPreferences) => {
+    try {
+      const resolvedOwnerId = ownerId ?? await getLocalOwnerId();
+      if (!ownerId) {
+        setOwnerId(resolvedOwnerId);
+      }
+
+      await AsyncStorage.setItem(
+        `${WALK_SETUP_STORAGE_KEY_PREFIX}${resolvedOwnerId}`,
+        JSON.stringify(nextPreferences)
+      );
+    } catch (error) {
+      console.error('Error saving walk setup preferences:', error);
     }
   };
 
@@ -173,6 +235,22 @@ export default function WalkSetupScreen() {
 
     setWeeklyPlan(nextPlan);
     saveWeeklyPlan(nextPlan);
+  };
+
+  const handleDistanceThresholdChange = (distance: number) => {
+    setDistanceThreshold(distance);
+    saveWalkSetupPreferences({
+      distanceThreshold: distance,
+      technique: selectedTechnique,
+    });
+  };
+
+  const handleTechniqueChange = (technique: string) => {
+    setSelectedTechnique(technique);
+    saveWalkSetupPreferences({
+      distanceThreshold,
+      technique,
+    });
   };
 
   const toggleChecklistItem = (item: keyof typeof checklist) => {
@@ -345,7 +423,7 @@ export default function WalkSetupScreen() {
                   styles.distanceButton,
                   distanceThreshold === distance && styles.distanceButtonActive
                 ]}
-                onPress={() => setDistanceThreshold(distance)}
+                onPress={() => handleDistanceThresholdChange(distance)}
               >
                 <Text 
                   style={[
@@ -371,7 +449,7 @@ export default function WalkSetupScreen() {
                   styles.techniqueCard,
                   selectedTechnique === technique.id && styles.techniqueCardActive
                 ]}
-                onPress={() => setSelectedTechnique(technique.id)}
+                onPress={() => handleTechniqueChange(technique.id)}
               >
                 <MaterialCommunityIcons 
                   name={technique.icon as keyof typeof MaterialCommunityIcons.glyphMap} 
