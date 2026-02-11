@@ -9,6 +9,8 @@ import { getOfferings, hasPremiumAccess, purchasePackage, restorePurchases } fro
 import { useSubscription } from '../lib/billing/subscription';
 import { logBillingError, logBillingInfo } from '../lib/billing/telemetry';
 
+const FREE_TRIAL_DAYS = 7;
+
 export default function PaywallScreen() {
   const params = useLocalSearchParams<{ source?: string }>();
   const [loading, setLoading] = useState(true);
@@ -40,6 +42,30 @@ export default function PaywallScreen() {
     }
 
     return null;
+  }, []);
+
+  const legalDisclosureText = useMemo(() => {
+    if (Platform.OS === 'android') {
+      return [
+        'Payment will be charged to your Google Play account at confirmation of purchase.',
+        'Subscription automatically renews unless canceled at least 24 hours before the end of the current period.',
+        'You can manage and cancel your subscription in your Google Play account settings.',
+      ].join('\n');
+    }
+
+    if (Platform.OS === 'ios') {
+      return [
+        'Payment will be charged to your Apple ID account at confirmation of purchase.',
+        'Subscription automatically renews unless canceled at least 24 hours before the end of the current period.',
+        'You can manage and cancel your subscription in your App Store account settings.',
+      ].join('\n');
+    }
+
+    return [
+      'Payment will be charged to your store account at confirmation of purchase.',
+      'Subscription automatically renews unless canceled at least 24 hours before the end of the current period.',
+      'You can manage and cancel your subscription in your store account settings.',
+    ].join('\n');
   }, []);
 
   const openExternalLink = async (url: string | null, label: string) => {
@@ -263,8 +289,8 @@ export default function PaywallScreen() {
         <View style={styles.trialBanner}>
           <MaterialCommunityIcons name="timer-sand" size={20} color="#1D4ED8" />
           <View style={styles.trialBannerTextWrap}>
-            <Text style={styles.trialBannerTitle}>Start risk-free on eligible plans</Text>
-            <Text style={styles.trialBannerBody}>App Store and Google Play can offer free trial periods before billing starts.</Text>
+            <Text style={styles.trialBannerTitle}>Start with a {FREE_TRIAL_DAYS}-day free trial</Text>
+            <Text style={styles.trialBannerBody}>Try premium coaching and progress tools free for 7 days. Cancel any time in your store settings.</Text>
           </View>
         </View>
 
@@ -291,6 +317,7 @@ export default function PaywallScreen() {
             <View style={styles.packagesWrap}>
               {rankedPackages.map((item, index) => {
               const isAnnual = item.packageType === 'ANNUAL';
+              const hasFreeTrial = item.packageType === 'ANNUAL' || item.packageType === 'MONTHLY';
               const isRecommended = isAnnual || index === 0;
               const recommendedLabel = isAnnual && annualSavingsPercent
                 ? `Best value - Save ${annualSavingsPercent}%`
@@ -310,6 +337,9 @@ export default function PaywallScreen() {
                   {item.product.pricePerMonthString ? (
                     <Text style={styles.packageSubPrice}>{item.product.pricePerMonthString} per month</Text>
                   ) : null}
+                  {hasFreeTrial ? (
+                    <Text style={styles.packageTrialText}>{FREE_TRIAL_DAYS}-day free trial included, then auto-renewal starts.</Text>
+                  ) : null}
                   {isAnnual && annualSavingsPercent ? (
                     <Text style={styles.packageSavings}>Roughly {annualSavingsPercent}% cheaper than paying monthly for a year.</Text>
                   ) : null}
@@ -319,9 +349,9 @@ export default function PaywallScreen() {
                     style={styles.purchaseButton}
                     loading={purchasingId === item.identifier}
                     disabled={Boolean(purchasingId)}
-                    onPress={() => handlePurchase(item)}
-                  >
-                    Start plan
+                  onPress={() => handlePurchase(item)}
+                >
+                    {hasFreeTrial ? `Start ${FREE_TRIAL_DAYS}-day free trial` : 'Start plan'}
                   </Button>
                 </Card.Content>
               </Card>
@@ -333,19 +363,23 @@ export default function PaywallScreen() {
           <Button mode="outlined" onPress={handleRestore} loading={restoring} disabled={restoring || loading || !isMobilePlatform}>
             Restore Purchases
           </Button>
-          <Text style={styles.billingNote}>Subscriptions renew automatically unless canceled in your store account settings.</Text>
         </View>
 
-        <View style={styles.legalActions}>
-          <Button compact mode="text" onPress={() => openExternalLink(termsUrl, 'Terms of Service')}>
-            Terms
-          </Button>
-          <Button compact mode="text" onPress={() => openExternalLink(privacyUrl, 'Privacy Policy')}>
-            Privacy
-          </Button>
-          <Button compact mode="text" onPress={() => openExternalLink(manageSubscriptionUrl, 'Manage Subscription')}>
-            Manage Subscription
-          </Button>
+        <View style={styles.legalSection}>
+          <Text style={styles.legalDisclosureText}>{legalDisclosureText}</Text>
+          <View style={styles.legalLinksRow}>
+            <Text style={styles.legalLink} onPress={() => openExternalLink(privacyUrl, 'Privacy Policy')}>
+              Privacy Policy
+            </Text>
+            <Text style={styles.legalLinkSeparator}>|</Text>
+            <Text style={styles.legalLink} onPress={() => openExternalLink(termsUrl, 'Terms of Use')}>
+              Terms of Use
+            </Text>
+            <Text style={styles.legalLinkSeparator}>|</Text>
+            <Text style={styles.legalLink} onPress={() => openExternalLink(manageSubscriptionUrl, 'Manage Subscription')}>
+              Manage Subscription
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -502,6 +536,12 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '600',
   },
+  packageTrialText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#1E3A8A',
+    fontWeight: '600',
+  },
   packageSavings: {
     marginTop: 6,
     fontSize: 12,
@@ -513,17 +553,34 @@ const styles = StyleSheet.create({
   },
   footerActions: {
     marginTop: 18,
-    gap: 6,
+    marginBottom: 2,
   },
-  billingNote: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 17,
-  },
-  legalActions: {
+  legalSection: {
     marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 14,
+    gap: 10,
+  },
+  legalDisclosureText: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: '#718096',
+  },
+  legalLinksRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 8,
+  },
+  legalLink: {
+    fontSize: 11,
+    color: '#718096',
+    textDecorationLine: 'underline',
+  },
+  legalLinkSeparator: {
+    fontSize: 11,
+    color: '#94A3B8',
   },
 });
