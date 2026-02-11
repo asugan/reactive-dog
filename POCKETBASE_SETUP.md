@@ -19,6 +19,11 @@ Extended user information with subscription management.
 | id | text | Auto-generated unique ID |
 | user | relation | Reference to users collection (1-to-1) |
 | subscription_tier | select | Values: `free`, `premium` |
+| subscription_expires_at | date | Premium expiry timestamp cache |
+| subscription_source | select | Values: `none`, `revenuecat`, `manual` |
+| revenuecat_app_user_id | text | RevenueCat app user id cache |
+| revenuecat_last_event | text | Last processed RevenueCat event type |
+| revenuecat_last_event_at | date | Last RevenueCat event timestamp |
 | full_name | text | User's display name |
 | username | text | Unique username |
 | created | autodate | Creation timestamp |
@@ -110,6 +115,22 @@ Community forum posts.
 **Relations:**
 - `author_id` → `users` (cascade delete)
 
+### 6. billing_webhook_events
+Raw RevenueCat webhook event storage (admin-only).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | text | Auto-generated unique ID |
+| event_type | text | RevenueCat event type |
+| app_user_id | text | RevenueCat app user id |
+| user | relation | Optional link to users collection |
+| payload | json | Raw webhook payload |
+| processed | bool | Whether event is processed |
+| processed_at | date | Processing timestamp |
+| processing_error | text | Last processing error (if any) |
+| created | autodate | Creation timestamp |
+| updated | autodate | Last update timestamp |
+
 ## Import Instructions
 
 ### Step 1: Prepare PocketBase
@@ -123,7 +144,7 @@ Community forum posts.
 1. Navigate to **Settings** → **Import collections**
 2. Click **"Load from JSON file"**
 3. Select `pocketbase_collections.json`
-4. Review the changes (all 5 collections should be listed)
+4. Review the changes (all collections should be listed)
 5. Click **Import**
 
 ### Step 3: Configure API Rules

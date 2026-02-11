@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import PocketBase, { AuthModel } from 'pocketbase';
 import EventSource from 'react-native-sse';
+import { initializeRevenueCat, syncRevenueCatUser } from './billing/revenuecat';
 
 const pocketbaseUrl = process.env.EXPO_PUBLIC_POCKETBASE_URL!;
 
@@ -37,7 +38,13 @@ export const initializePocketBase = async () => {
         } else {
           AsyncStorage.removeItem('pb_auth');
         }
+
+        syncRevenueCatUser(model?.id || null).catch((error) => {
+          console.error('Failed to sync RevenueCat user', error);
+        });
       }, true);
+
+      await initializeRevenueCat(pb.authStore.model?.id || null);
     })();
   }
 

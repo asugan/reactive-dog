@@ -20,6 +20,7 @@ import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { ActivityIndicator, Button, Card, Chip, Dialog, FAB, IconButton, Modal as PaperModal, Portal, TextInput } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
+import { PremiumGate } from '../../components/PremiumGate';
 
 interface CommunityPost {
   id: string;
@@ -158,7 +159,7 @@ const FALLBACK_EXPERT_SESSIONS: ExpertSession[] = [
   },
 ];
 
-export default function CommunityScreen() {
+function CommunityScreenContent() {
   const insets = useSafeAreaInsets();
   const entranceAnim = useRef(new Animated.Value(0)).current;
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -1226,6 +1227,18 @@ export default function CommunityScreen() {
         onPress={() => setModalVisible(true)}
       />
     </SafeAreaView>
+  );
+}
+
+export default function CommunityScreen() {
+  return (
+    <PremiumGate
+      featureName="Community Hub"
+      description="Access local owner map, expert Q&A sessions, and community posting tools."
+      source="community"
+    >
+      <CommunityScreenContent />
+    </PremiumGate>
   );
 }
 

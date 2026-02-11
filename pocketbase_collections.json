@@ -44,6 +44,67 @@
         "values": ["free", "premium"]
       },
       {
+        "hidden": false,
+        "id": "date900000001",
+        "max": "",
+        "min": "",
+        "name": "subscription_expires_at",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "date"
+      },
+      {
+        "hidden": false,
+        "id": "select900000001",
+        "maxSelect": 1,
+        "name": "subscription_source",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "select",
+        "values": ["none", "revenuecat", "manual"]
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text900000001",
+        "max": 0,
+        "min": 0,
+        "name": "revenuecat_app_user_id",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text900000002",
+        "max": 0,
+        "min": 0,
+        "name": "revenuecat_last_event",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "date900000002",
+        "max": "",
+        "min": "",
+        "name": "revenuecat_last_event_at",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "date"
+      },
+      {
         "autogeneratePattern": "",
         "hidden": false,
         "id": "text1579384326",
@@ -1004,6 +1065,159 @@
     "createRule": "@request.auth.id != '' && owner_id = @request.auth.id && session_id.is_active = true",
     "updateRule": "@request.auth.id != '' && owner_id = @request.auth.id",
     "deleteRule": "@request.auth.id != '' && owner_id = @request.auth.id",
+    "options": {}
+  },
+  {
+    "id": "pb_billing_webhook_events",
+    "name": "billing_webhook_events",
+    "type": "base",
+    "system": false,
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text910000001",
+        "max": 0,
+        "min": 0,
+        "name": "event_type",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": true,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text910000004",
+        "max": 0,
+        "min": 0,
+        "name": "event_id",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text910000002",
+        "max": 0,
+        "min": 0,
+        "name": "app_user_id",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "_pb_users_auth_",
+        "hidden": false,
+        "id": "relation910000001",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "user",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "hidden": false,
+        "id": "json910000001",
+        "maxSize": 0,
+        "name": "payload",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "json"
+      },
+      {
+        "hidden": false,
+        "id": "bool910000001",
+        "name": "processed",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "bool"
+      },
+      {
+        "hidden": false,
+        "id": "date910000001",
+        "max": "",
+        "min": "",
+        "name": "processed_at",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "date"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text910000003",
+        "max": 0,
+        "min": 0,
+        "name": "processing_error",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_billing_webhook_events_event_id ON billing_webhook_events (event_id)",
+      "CREATE INDEX idx_billing_webhook_events_event_type ON billing_webhook_events (event_type)",
+      "CREATE INDEX idx_billing_webhook_events_app_user_id ON billing_webhook_events (app_user_id)",
+      "CREATE INDEX idx_billing_webhook_events_processed ON billing_webhook_events (processed)"
+    ],
+    "listRule": null,
+    "viewRule": null,
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
     "options": {}
   }
 ]

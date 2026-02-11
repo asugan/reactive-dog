@@ -32,7 +32,7 @@ export default function ActiveWalkScreen() {
   const [selectedSeverity, setSelectedSeverity] = useState(3);
   const [pulseAnim] = useState(new Animated.Value(1));
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
   // Pulse animation for active indicator

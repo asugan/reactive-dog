@@ -1,12 +1,78 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Button, Card, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCurrentUser, logout } from '../../lib/pocketbase';
+import { getCustomerInfo, getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
+import { hasPremiumAccessWithFallback } from '../../lib/billing/access';
 
 export default function SettingsScreen() {
   const user = getCurrentUser();
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+
+  const loadSubscriptionStatus = useCallback(async () => {
+    setIsLoadingSubscription(true);
+    setSubscriptionError(null);
+
+    try {
+      const customerInfo = await getCustomerInfo();
+      if (!customerInfo) {
+        const fallbackAccess = await hasPremiumAccessWithFallback();
+        setIsPremium(fallbackAccess);
+        if (!fallbackAccess) {
+          setSubscriptionError('RevenueCat henuz yapilandirilmamis gorunuyor.');
+        }
+        return;
+      }
+
+      const access = hasPremiumAccess(customerInfo);
+      if (access) {
+        setIsPremium(true);
+        return;
+      }
+
+      const fallbackAccess = await hasPremiumAccessWithFallback();
+      setIsPremium(fallbackAccess);
+    } catch (error) {
+      console.error('Failed to load subscription status', error);
+      setSubscriptionError('Abonelik durumu alinamadi. Lutfen tekrar deneyin.');
+    } finally {
+      setIsLoadingSubscription(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSubscriptionStatus();
+  }, [loadSubscriptionStatus]);
+
+  const handleRestorePurchases = async () => {
+    setIsRestoring(true);
+    setSubscriptionError(null);
+
+    try {
+      const customerInfo = await restorePurchases();
+      const hasAccess = hasPremiumAccess(customerInfo);
+      setIsPremium(hasAccess);
+
+      Alert.alert(
+        hasAccess ? 'Restored' : 'Nothing to restore',
+        hasAccess
+          ? 'Premium erisiminiz bu cihaz icin geri yuklendi.'
+          : 'Bu hesap icin geri yuklenecek aktif bir abonelik bulunamadi.'
+      );
+    } catch (error) {
+      console.error('Failed to restore purchases', error);
+      setSubscriptionError('Restore islemi basarisiz oldu. Lutfen tekrar deneyin.');
+      Alert.alert('Restore failed', 'Restore islemi basarisiz oldu. Lutfen tekrar deneyin.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Log out', 'Are you sure you want to log out?', [
@@ -65,6 +131,37 @@ export default function SettingsScreen() {
               <Text style={styles.rowLabel}>Session</Text>
               <Text style={styles.rowValue}>Active</Text>
             </View>
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.sectionCard}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Subscription</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Entitlement</Text>
+              <Text style={styles.rowValue}>{getEntitlementId()}</Text>
+            </View>
+            <Divider style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Status</Text>
+              <Text style={[styles.rowValue, isPremium ? styles.premiumText : styles.freeText]}>
+                {isLoadingSubscription ? 'Checking...' : isPremium ? 'Premium active' : 'Free plan'}
+              </Text>
+            </View>
+            {subscriptionError ? <Text style={styles.subscriptionError}>{subscriptionError}</Text> : null}
+            <View style={styles.subscriptionActions}>
+              <Button mode="outlined" onPress={loadSubscriptionStatus} disabled={isLoadingSubscription || isRestoring}>
+                Refresh
+              </Button>
+              <Button mode="contained" onPress={handleRestorePurchases} loading={isRestoring} disabled={isRestoring || isLoadingSubscription}>
+                Restore Purchases
+              </Button>
+            </View>
+            {!isPremium && !isLoadingSubscription ? (
+              <Button mode="text" onPress={() => router.push('/paywall')}>
+                View Premium Plans
+              </Button>
+            ) : null}
           </Card.Content>
         </Card>
 
@@ -168,6 +265,24 @@ const styles = StyleSheet.create({
   },
   divider: {
     marginVertical: 10,
+  },
+  premiumText: {
+    color: '#166534',
+  },
+  freeText: {
+    color: '#475569',
+  },
+  subscriptionError: {
+    marginTop: 10,
+    marginBottom: 4,
+    fontSize: 13,
+    color: '#B45309',
+  },
+  subscriptionActions: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   dangerCard: {
     borderRadius: 16,

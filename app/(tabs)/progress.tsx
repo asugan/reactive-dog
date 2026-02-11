@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, ScrollView, Dimensions, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { AuthModel, RecordModel } from "pocketbase";
 import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,6 +10,7 @@ import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
+import { hasPremiumAccessWithFallback } from '../../lib/billing/access';
 
 const { width } = Dimensions.get('window');
 const ACCENT_COLOR = '#1D4ED8';
@@ -70,6 +72,8 @@ export default function ProgressScreen() {
   const [exporting, setExporting] = useState(false);
   const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([]);
   const [showMap, setShowMap] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [checkingPremium, setCheckingPremium] = useState(true);
   const [mapRegion, setMapRegion] = useState({
     latitude: 39.9334,
     longitude: 32.8597,
@@ -149,6 +153,22 @@ export default function ProgressScreen() {
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  useEffect(() => {
+    const checkPremium = async () => {
+      try {
+        const allowed = await hasPremiumAccessWithFallback();
+        setIsPremium(allowed);
+      } catch (error) {
+        console.error('Error checking premium in progress screen:', error);
+        setIsPremium(false);
+      } finally {
+        setCheckingPremium(false);
+      }
+    };
+
+    checkPremium();
+  }, []);
 
   useEffect(() => {
     Animated.timing(entranceAnim, {
@@ -538,17 +558,30 @@ export default function ProgressScreen() {
                 mode="contained-tonal"
                 icon="file-pdf-box"
                 style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
-                onPress={generateReport}
-                disabled={exporting || logs.length === 0}
+                onPress={() => {
+                  if (isPremium) {
+                    generateReport();
+                    return;
+                  }
+
+                  router.push({ pathname: '/paywall', params: { source: 'progress-report-export' } });
+                }}
+                disabled={checkingPremium || exporting || logs.length === 0}
               >
                 {exporting ? (
                   <ActivityIndicator size="small" color="#7C3AED" />
                 ) : (
-                  'Export'
+                  isPremium ? 'Export' : 'Premium'
                 )}
               </Button>
             </View>
           </View>
+          {!isPremium && !checkingPremium ? (
+            <Pressable style={styles.premiumHintRow} onPress={() => router.push({ pathname: '/paywall', params: { source: 'progress-report-export' } })}>
+              <MaterialCommunityIcons name="lock-outline" size={15} color="#1E3A8A" />
+              <Text style={styles.premiumHintText}>PDF export is a premium feature. Tap to unlock.</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* Time Range Selector */}
@@ -1092,6 +1125,17 @@ const styles = StyleSheet.create({
   },
   exportButtonDisabled: {
     opacity: 0.5,
+  },
+  premiumHintRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  premiumHintText: {
+    fontSize: 13,
+    color: '#1E3A8A',
+    fontWeight: '600',
   },
   // Map Modal Styles
   modalOverlay: {
