@@ -93,6 +93,8 @@ EXPO_PUBLIC_POSTHOG_HOST=https://app.posthog.com
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=your_android_key
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=your_ios_key
 EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID=premium
+EXPO_PUBLIC_TERMS_URL=https://your-domain.com/terms
+EXPO_PUBLIC_PRIVACY_URL=https://your-domain.com/privacy
 ```
 
 4) Run app
@@ -122,6 +124,7 @@ Migrations are managed in `lib/data/database.ts`.
 
 - Data is device-local. Reinstalling app can remove data unless exported first.
 - Premium checks are device/app-user based through RevenueCat.
+- Billing telemetry events are sent to PostHog when `EXPO_PUBLIC_POSTHOG_KEY` is configured.
 
 ## License
 

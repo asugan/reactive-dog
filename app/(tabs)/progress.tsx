@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, ScrollView, Dimensions, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
-import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
+import { usePremiumGate } from '../../lib/billing/premiumGate';
+import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositories/triggerLogRepo';
 import { listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
@@ -83,14 +83,19 @@ export default function ProgressScreen() {
   const [exporting, setExporting] = useState(false);
   const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([]);
   const [showMap, setShowMap] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [checkingPremium, setCheckingPremium] = useState(true);
   const [mapRegion, setMapRegion] = useState({
     latitude: 39.9334,
     longitude: 32.8597,
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   });
+  const {
+    status: subscriptionStatus,
+    isLoading: isSubscriptionLoading,
+    isPremium,
+    openPaywall,
+    refresh: refreshSubscription,
+  } = usePremiumGate('progress-report-export');
   const entranceAnim = useRef(new Animated.Value(0)).current;
 
   const fetchLogs = useCallback(async () => {
@@ -161,22 +166,6 @@ export default function ProgressScreen() {
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
-
-  useEffect(() => {
-    const checkPremium = async () => {
-      try {
-        const allowed = await hasPremiumAccessFromRevenueCat();
-        setIsPremium(allowed);
-      } catch (error) {
-        console.error('Error checking premium in progress screen:', error);
-        setIsPremium(false);
-      } finally {
-        setCheckingPremium(false);
-      }
-    };
-
-    checkPremium();
-  }, []);
 
   useEffect(() => {
     Animated.timing(entranceAnim, {
@@ -558,26 +547,75 @@ export default function ProgressScreen() {
                 style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
                 onPress={() => {
                   if (isPremium) {
+                    logBillingInfo('progress_export_started');
                     generateReport();
                     return;
                   }
 
-                  router.push({ pathname: '/paywall', params: { source: 'progress-report-export' } });
+                  if (subscriptionStatus === 'inactive') {
+                    openPaywall();
+                    return;
+                  }
+
+                  logBillingInfo('progress_export_blocked_unknown_status');
+                  Alert.alert(
+                    'Subscription status unavailable',
+                    'We could not verify your subscription right now. You can refresh or view plans.',
+                    [
+                      {
+                        text: 'View Plans',
+                        onPress: () => {
+                          openPaywall();
+                        },
+                      },
+                      {
+                        text: 'Refresh',
+                        onPress: () => {
+                          refreshSubscription().catch((error) => {
+                            logBillingError('progress_subscription_refresh_failed', error);
+                          });
+                        },
+                      },
+                      {
+                        text: 'Later',
+                        style: 'cancel',
+                      },
+                    ]
+                  );
                 }}
-                disabled={checkingPremium || exporting || logs.length === 0}
+                disabled={isSubscriptionLoading || exporting || logs.length === 0}
               >
                 {exporting ? (
                   <ActivityIndicator size="small" color="#7C3AED" />
+                ) : isSubscriptionLoading ? (
+                  'Checking...'
+                ) : isPremium ? (
+                  'Export'
+                ) : subscriptionStatus === 'inactive' ? (
+                  'Premium'
                 ) : (
-                  isPremium ? 'Export' : 'Premium'
+                  'Plans / Retry'
                 )}
               </Button>
             </View>
           </View>
-          {!isPremium && !checkingPremium ? (
-            <Pressable style={styles.premiumHintRow} onPress={() => router.push({ pathname: '/paywall', params: { source: 'progress-report-export' } })}>
+          {subscriptionStatus === 'inactive' ? (
+            <Pressable style={styles.premiumHintRow} onPress={openPaywall}>
               <MaterialCommunityIcons name="lock-outline" size={15} color="#1E3A8A" />
               <Text style={styles.premiumHintText}>PDF export is a premium feature. Tap to unlock.</Text>
+            </Pressable>
+          ) : null}
+          {subscriptionStatus === 'unknown' && !isSubscriptionLoading ? (
+            <Pressable
+              style={styles.subscriptionStatusHintRow}
+              onPress={() => {
+                refreshSubscription().catch((error) => {
+                  logBillingError('progress_subscription_manual_refresh_failed', error);
+                });
+              }}
+            >
+              <MaterialCommunityIcons name="cloud-alert-outline" size={15} color="#7C2D12" />
+              <Text style={styles.subscriptionStatusHintText}>Subscription check failed. Tap to refresh.</Text>
             </Pressable>
           ) : null}
         </View>
@@ -1143,6 +1181,17 @@ const styles = StyleSheet.create({
   premiumHintText: {
     fontSize: 13,
     color: '#1E3A8A',
+    fontWeight: '600',
+  },
+  subscriptionStatusHintRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  subscriptionStatusHintText: {
+    fontSize: 13,
+    color: '#7C2D12',
     fontWeight: '600',
   },
   // Map Modal Styles

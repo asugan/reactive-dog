@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Button, Card } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { getOfferings, hasPremiumAccess, purchasePackage, restorePurchases } from '../lib/billing/revenuecat';
+import { useSubscription } from '../lib/billing/subscription';
+import { logBillingError, logBillingInfo } from '../lib/billing/telemetry';
 
 export default function PaywallScreen() {
   const params = useLocalSearchParams<{ source?: string }>();
@@ -13,6 +15,8 @@ export default function PaywallScreen() {
   const [restoring, setRestoring] = useState(false);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const { refresh: refreshSubscription } = useSubscription();
+  const isMobilePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
   const sourceLabel = useMemo(() => {
     if (!params.source) {
@@ -21,6 +25,44 @@ export default function PaywallScreen() {
 
     return `${params.source}`;
   }, [params.source]);
+
+  const termsUrl = process.env.EXPO_PUBLIC_TERMS_URL || null;
+  const privacyUrl = process.env.EXPO_PUBLIC_PRIVACY_URL || null;
+
+  const manageSubscriptionUrl = useMemo(() => {
+    if (Platform.OS === 'ios') {
+      return 'https://apps.apple.com/account/subscriptions';
+    }
+
+    if (Platform.OS === 'android') {
+      return 'https://play.google.com/store/account/subscriptions';
+    }
+
+    return null;
+  }, []);
+
+  const openExternalLink = async (url: string | null, label: string) => {
+    if (!url) {
+      Alert.alert('Link unavailable', `${label} URL is not configured.`);
+      return;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) {
+        Alert.alert('Link unavailable', `Could not open ${label}.`);
+        return;
+      }
+
+      await Linking.openURL(url);
+    } catch (error) {
+      logBillingError('paywall_external_link_open_failed', error, {
+        label,
+        url,
+      });
+      Alert.alert('Link unavailable', `Could not open ${label}.`);
+    }
+  };
 
   const rankedPackages = useMemo(() => {
     const getRank = (value: PurchasesPackage) => {
@@ -38,24 +80,38 @@ export default function PaywallScreen() {
 
   useEffect(() => {
     const loadOfferings = async () => {
+      if (!isMobilePlatform) {
+        setLoading(false);
+        logBillingInfo('paywall_mobile_only_platform', {
+          platform: Platform.OS,
+        });
+        return;
+      }
+
       try {
         const offerings = await getOfferings();
         setPackages(offerings?.current?.availablePackages ?? []);
       } catch (error) {
-        console.error('Failed to load offerings', error);
+        logBillingError('paywall_offerings_load_failed', error);
       } finally {
         setLoading(false);
       }
     };
 
     loadOfferings();
-  }, []);
+  }, [isMobilePlatform]);
 
   const handlePurchase = async (selectedPackage: PurchasesPackage) => {
     try {
       setPurchasingId(selectedPackage.identifier);
       const result = await purchasePackage(selectedPackage);
       const unlocked = hasPremiumAccess(result.customerInfo);
+      await refreshSubscription();
+
+      logBillingInfo('paywall_purchase_completed', {
+        packageId: selectedPackage.identifier,
+        unlocked,
+      });
 
       if (unlocked) {
         Alert.alert('Premium active', 'Your subscription is now active.', [
@@ -69,10 +125,15 @@ export default function PaywallScreen() {
       }
     } catch (error: any) {
       if (error?.userCancelled) {
+        logBillingInfo('paywall_purchase_cancelled', {
+          packageId: selectedPackage.identifier,
+        });
         return;
       }
 
-      console.error('Purchase failed', error);
+      logBillingError('paywall_purchase_failed', error, {
+        packageId: selectedPackage.identifier,
+      });
       Alert.alert('Purchase failed', 'Could not complete purchase. Please try again.');
     } finally {
       setPurchasingId(null);
@@ -84,6 +145,11 @@ export default function PaywallScreen() {
       setRestoring(true);
       const customerInfo = await restorePurchases();
       const unlocked = hasPremiumAccess(customerInfo);
+      await refreshSubscription();
+
+      logBillingInfo('paywall_restore_completed', {
+        unlocked,
+      });
 
       Alert.alert(
         unlocked ? 'Restored' : 'Nothing to restore',
@@ -94,7 +160,7 @@ export default function PaywallScreen() {
         router.back();
       }
     } catch (error) {
-      console.error('Restore failed', error);
+      logBillingError('paywall_restore_failed', error);
       Alert.alert('Restore failed', 'Could not restore purchases. Please try again.');
     } finally {
       setRestoring(false);
@@ -113,11 +179,11 @@ export default function PaywallScreen() {
         <View style={styles.benefitsWrap}>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
-            <Text style={styles.benefitText}>Advanced trigger insights and deeper trend analysis</Text>
+            <Text style={styles.benefitText}>Export polished PDF training reports from Progress</Text>
           </View>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
-            <Text style={styles.benefitText}>Premium reports and advanced progress insights</Text>
+            <Text style={styles.benefitText}>Restore and manage your premium subscription any time</Text>
           </View>
         </View>
 
@@ -126,6 +192,13 @@ export default function PaywallScreen() {
             <ActivityIndicator size="large" color="#1D4ED8" />
             <Text style={styles.loadingText}>Loading plans...</Text>
           </View>
+        ) : !isMobilePlatform ? (
+          <Card style={styles.emptyCard}>
+            <Card.Content>
+              <Text style={styles.emptyTitle}>Subscriptions are mobile-only</Text>
+              <Text style={styles.emptyText}>Please open this screen on iOS or Android to purchase or restore subscriptions.</Text>
+            </Card.Content>
+          </Card>
         ) : rankedPackages.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Card.Content>
@@ -169,11 +242,23 @@ export default function PaywallScreen() {
         )}
 
         <View style={styles.footerActions}>
-          <Button mode="outlined" onPress={handleRestore} loading={restoring} disabled={restoring || loading}>
+          <Button mode="outlined" onPress={handleRestore} loading={restoring} disabled={restoring || loading || !isMobilePlatform}>
             Restore Purchases
           </Button>
           <Button mode="text" onPress={() => router.back()}>
             Maybe later
+          </Button>
+        </View>
+
+        <View style={styles.legalActions}>
+          <Button compact mode="text" onPress={() => openExternalLink(termsUrl, 'Terms of Service')}>
+            Terms
+          </Button>
+          <Button compact mode="text" onPress={() => openExternalLink(privacyUrl, 'Privacy Policy')}>
+            Privacy
+          </Button>
+          <Button compact mode="text" onPress={() => openExternalLink(manageSubscriptionUrl, 'Manage Subscription')}>
+            Manage Subscription
           </Button>
         </View>
       </ScrollView>
@@ -307,5 +392,11 @@ const styles = StyleSheet.create({
   footerActions: {
     marginTop: 18,
     gap: 6,
+  },
+  legalActions: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
 });

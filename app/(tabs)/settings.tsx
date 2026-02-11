@@ -6,15 +6,21 @@ import { Button, Card, Divider, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { clearAllLocalData, exportLocalData, importLocalData } from '../../lib/data/repositories/settingsRepo';
 import { getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
-import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
+import { useSubscription } from '../../lib/billing/subscription';
+import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
 import { getLocalOwnerId } from '../../lib/localApp';
 
 export default function SettingsScreen() {
   const [ownerId, setOwnerId] = useState<string>('-');
-  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const {
+    status: subscriptionStatus,
+    isLoading: isLoadingSubscription,
+    error: subscriptionError,
+    refresh: refreshSubscription,
+  } = useSubscription();
+  const isPremium = subscriptionStatus === 'active';
 
   const [exportingData, setExportingData] = useState(false);
   const [showImportEditor, setShowImportEditor] = useState(false);
@@ -28,35 +34,36 @@ export default function SettingsScreen() {
   }, []);
 
   const loadSubscriptionStatus = useCallback(async () => {
-    setIsLoadingSubscription(true);
-    setSubscriptionError(null);
+    setRestoreError(null);
 
     try {
-      const access = await hasPremiumAccessFromRevenueCat();
-      setIsPremium(access);
+      await refreshSubscription();
     } catch (error) {
-      console.error('Failed to load subscription status', error);
-      setSubscriptionError('Abonelik durumu alinamadi. Lutfen tekrar deneyin.');
-    } finally {
-      setIsLoadingSubscription(false);
+      logBillingError('settings_subscription_refresh_failed', error);
     }
-  }, []);
+  }, [refreshSubscription]);
 
   useEffect(() => {
     refreshOwnerId().catch((error) => {
       console.error('Failed to load local owner id', error);
     });
-    loadSubscriptionStatus();
+    loadSubscriptionStatus().catch((error) => {
+      logBillingError('settings_initial_subscription_load_failed', error);
+    });
   }, [loadSubscriptionStatus, refreshOwnerId]);
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
-    setSubscriptionError(null);
+    setRestoreError(null);
 
     try {
       const customerInfo = await restorePurchases();
       const hasAccess = hasPremiumAccess(customerInfo);
-      setIsPremium(hasAccess);
+      await refreshSubscription();
+
+      logBillingInfo('settings_restore_completed', {
+        hasAccess,
+      });
 
       Alert.alert(
         hasAccess ? 'Restored' : 'Nothing to restore',
@@ -65,8 +72,8 @@ export default function SettingsScreen() {
           : 'Bu cihaz icin geri yuklenecek aktif bir abonelik bulunamadi.'
       );
     } catch (error) {
-      console.error('Failed to restore purchases', error);
-      setSubscriptionError('Restore islemi basarisiz oldu. Lutfen tekrar deneyin.');
+      logBillingError('settings_restore_failed', error);
+      setRestoreError('Restore islemi basarisiz oldu. Lutfen tekrar deneyin.');
       Alert.alert('Restore failed', 'Restore islemi basarisiz oldu. Lutfen tekrar deneyin.');
     } finally {
       setIsRestoring(false);
@@ -234,10 +241,16 @@ export default function SettingsScreen() {
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Status</Text>
               <Text style={[styles.rowValue, isPremium ? styles.premiumText : styles.freeText]}>
-                {isLoadingSubscription ? 'Checking...' : isPremium ? 'Premium active' : 'Free plan'}
+                {isLoadingSubscription
+                  ? 'Checking...'
+                  : isPremium
+                    ? 'Premium active'
+                    : subscriptionStatus === 'unknown'
+                      ? 'Status unavailable'
+                      : 'Free plan'}
               </Text>
             </View>
-            {subscriptionError ? <Text style={styles.subscriptionError}>{subscriptionError}</Text> : null}
+            {restoreError || subscriptionError ? <Text style={styles.subscriptionError}>{restoreError || subscriptionError}</Text> : null}
 
             <View style={styles.subscriptionActions}>
               <Button mode="outlined" onPress={loadSubscriptionStatus} disabled={isLoadingSubscription || isRestoring}>
@@ -248,7 +261,7 @@ export default function SettingsScreen() {
               </Button>
             </View>
 
-            {!isPremium && !isLoadingSubscription ? (
+            {subscriptionStatus !== 'active' && !isLoadingSubscription ? (
               <Button mode="text" onPress={() => router.push('/paywall')}>
                 View Premium Plans
               </Button>

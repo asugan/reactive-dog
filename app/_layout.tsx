@@ -6,7 +6,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { getByOwnerId } from '../lib/data/repositories/dogProfileRepo';
 import { getLocalOwnerId, initializeLocalApp } from '../lib/localApp';
 import { AnimatedSplashScreen } from '../components/AnimatedSplashScreen';
-// TODO: PostHog - import { PostHogProvider } from '../lib/posthog';
+import { SubscriptionProvider } from '../lib/billing/subscription';
+import { PostHogProvider } from '../lib/posthog';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore if splash screen was already prevented.
@@ -151,18 +152,13 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={appTheme}>
-        {/* TODO: PostHog - Wrap with PostHogProvider when ready
-        <PostHogProvider 
-          apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY}
-          options={{
-            host: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com',
-          }}
-        >
-        */}
-          <RootLayoutNav />
-        {/* TODO: PostHog - </PostHogProvider> */}
-      </PaperProvider>
+      <PostHogProvider>
+        <PaperProvider theme={appTheme}>
+          <SubscriptionProvider>
+            <RootLayoutNav />
+          </SubscriptionProvider>
+        </PaperProvider>
+      </PostHogProvider>
     </SafeAreaProvider>
   );
 }

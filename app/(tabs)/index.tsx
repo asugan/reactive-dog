@@ -4,10 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, Surface } from 'react-native-paper';
+import { usePostHog } from 'posthog-react-native';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { countByOwner, listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
-// TODO: PostHog - import { usePostHog } from 'posthog-react-native';
 
 interface Walk {
   id: string;
@@ -22,7 +22,7 @@ interface DogProfile {
 }
 
 export default function Dashboard() {
-  // TODO: PostHog - const posthog = usePostHog();
+  const posthog = usePostHog();
   const [dogProfile, setDogProfile] = useState<DogProfile | null>(null);
   const [recentWalks, setRecentWalks] = useState<Walk[]>([]);
   const [stats, setStats] = useState({
@@ -32,7 +32,7 @@ export default function Dashboard() {
   const entranceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // TODO: PostHog - posthog?.capture('dashboard_viewed');
+    posthog?.capture('dashboard_viewed');
     fetchDogProfile();
     fetchRecentWalks();
     fetchStats();
@@ -43,7 +43,7 @@ export default function Dashboard() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [entranceAnim]);
+  }, [entranceAnim, posthog]);
 
   const fetchDogProfile = async () => {
     try {

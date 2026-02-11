@@ -1,10 +1,18 @@
 import Purchases, { CustomerInfo, LOG_LEVEL, PurchasesOfferings, PurchasesPackage } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import { logBillingError, logBillingInfo, logBillingWarning } from './telemetry';
 
 const entitlementId = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID || 'premium';
 
 let configured = false;
 let currentUserId: string | null = null;
+
+type CustomerInfoListener = (customerInfo: CustomerInfo) => void;
+
+type PurchasesWithCustomerInfoListener = typeof Purchases & {
+  addCustomerInfoUpdateListener?: (listener: CustomerInfoListener) => void;
+  removeCustomerInfoUpdateListener?: (listener: CustomerInfoListener) => void;
+};
 
 const getApiKey = () => {
   if (Platform.OS === 'android') {
@@ -26,6 +34,8 @@ const canUseRevenueCat = () => {
   return Boolean(getApiKey());
 };
 
+export const isRevenueCatReady = () => configured && canUseRevenueCat();
+
 export const initializeRevenueCat = async (appUserId?: string | null) => {
   const apiKey = getApiKey();
 
@@ -33,22 +43,41 @@ export const initializeRevenueCat = async (appUserId?: string | null) => {
     if (__DEV__) {
       console.warn('RevenueCat is not configured. Missing platform API key or unsupported platform.');
     }
+    logBillingWarning('revenuecat_initialize_skipped', {
+      platform: Platform.OS,
+      hasApiKey: Boolean(apiKey),
+    });
     return false;
   }
 
-  if (!configured) {
-    await Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
-    Purchases.configure({
-      apiKey,
-      appUserID: appUserId ?? undefined,
-    });
-    configured = true;
-    currentUserId = appUserId ?? null;
-    return true;
-  }
+  try {
+    if (!configured) {
+      await Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
+      Purchases.configure({
+        apiKey,
+        appUserID: appUserId ?? undefined,
+      });
+      configured = true;
+      currentUserId = appUserId ?? null;
 
-  await syncRevenueCatUser(appUserId ?? null);
-  return true;
+      logBillingInfo('revenuecat_initialized', {
+        platform: Platform.OS,
+        hasUserId: Boolean(appUserId),
+      });
+      return true;
+    }
+
+    await syncRevenueCatUser(appUserId ?? null);
+    return true;
+  } catch (error) {
+    configured = false;
+    currentUserId = null;
+    logBillingError('revenuecat_initialize_failed', error, {
+      platform: Platform.OS,
+      hasUserId: Boolean(appUserId),
+    });
+    return false;
+  }
 };
 
 export const syncRevenueCatUser = async (appUserId: string | null) => {
@@ -82,6 +111,31 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
   }
 
   return Purchases.getCustomerInfo();
+};
+
+export const addCustomerInfoListener = (listener: CustomerInfoListener) => {
+  if (!isRevenueCatReady()) {
+    return () => {
+      // no-op
+    };
+  }
+
+  const purchasesClient = Purchases as PurchasesWithCustomerInfoListener;
+
+  if (
+    typeof purchasesClient.addCustomerInfoUpdateListener !== 'function'
+    || typeof purchasesClient.removeCustomerInfoUpdateListener !== 'function'
+  ) {
+    return () => {
+      // no-op
+    };
+  }
+
+  purchasesClient.addCustomerInfoUpdateListener(listener);
+
+  return () => {
+    purchasesClient.removeCustomerInfoUpdateListener?.(listener);
+  };
 };
 
 export const purchasePackage = async (selectedPackage: PurchasesPackage) => {
