@@ -55,7 +55,9 @@ export const loginWithEmail = async (email: string, password: string) => {
   return await pb.collection('users').authWithPassword(email, password);
 };
 
-export const loginWithOAuth = async (provider: string) => {
+export type OAuthProvider = 'google' | 'apple';
+
+export const loginWithOAuth = async (provider: OAuthProvider) => {
   return await pb.collection('users').authWithOAuth2({
     provider,
     urlCallback: async (authUrl) => {

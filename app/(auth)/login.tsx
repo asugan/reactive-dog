@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, TextInput, Button, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Button, TouchableOpacity, Platform } from 'react-native';
 import { useState } from 'react';
 import { Link, useRouter } from 'expo-router';
-import { loginWithEmail, loginWithOAuth } from '../../lib/pocketbase';
+import { loginWithEmail, loginWithOAuth, type OAuthProvider } from '../../lib/pocketbase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -21,13 +21,15 @@ export default function LoginScreen() {
     setLoading(false);
   }
 
-  async function signInWithGoogle() {
+  async function signInWithOAuth(provider: OAuthProvider) {
+    const providerLabel = provider === 'google' ? 'Google' : 'Apple';
+
     setLoading(true);
     try {
-      await loginWithOAuth('google');
+      await loginWithOAuth(provider);
       router.replace('/(tabs)');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Google login failed';
+      const message = error instanceof Error ? error.message : `${providerLabel} login failed`;
       alert(message);
     }
     setLoading(false);
@@ -60,11 +62,21 @@ export default function LoginScreen() {
       <View style={styles.socialSection}>
         <TouchableOpacity
           style={[styles.socialButton, loading && styles.socialButtonDisabled]}
-          onPress={signInWithGoogle}
+          onPress={() => signInWithOAuth('google')}
           disabled={loading}
         >
           <Text style={styles.socialButtonText}>Continue with Google</Text>
         </TouchableOpacity>
+
+        {Platform.OS === 'ios' ? (
+          <TouchableOpacity
+            style={[styles.socialButton, styles.appleButton, loading && styles.socialButtonDisabled]}
+            onPress={() => signInWithOAuth('apple')}
+            disabled={loading}
+          >
+            <Text style={[styles.socialButtonText, styles.appleButtonText]}>Continue with Apple</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       
       <View style={styles.footer}>
@@ -115,6 +127,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
   },
+  appleButton: {
+    marginTop: 10,
+    borderColor: '#111827',
+    backgroundColor: '#111827',
+  },
   socialButtonDisabled: {
     opacity: 0.6,
   },
@@ -122,6 +139,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#222',
+  },
+  appleButtonText: {
+    color: '#fff',
   },
   link: {
     color: '#0066cc',

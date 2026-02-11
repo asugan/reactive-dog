@@ -108,7 +108,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Security</Text>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Authentication</Text>
-              <Text style={styles.rowValue}>Google OAuth</Text>
+              <Text style={styles.rowValue}>Email / OAuth (Google, Apple)</Text>
             </View>
             <Divider style={styles.divider} />
             <View style={styles.row}>
