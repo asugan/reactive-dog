@@ -167,9 +167,24 @@ export default function PaywallScreen() {
     }
   };
 
+  const handleMaybeLater = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace('/(tabs)');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.topActionRow}>
+          <Button compact mode="text" onPress={handleMaybeLater}>
+            Maybe later
+          </Button>
+        </View>
+
         <View style={styles.headerIconWrap}>
           <MaterialCommunityIcons name="dog-service" size={30} color="#1D4ED8" />
         </View>
@@ -245,9 +260,6 @@ export default function PaywallScreen() {
           <Button mode="outlined" onPress={handleRestore} loading={restoring} disabled={restoring || loading || !isMobilePlatform}>
             Restore Purchases
           </Button>
-          <Button mode="text" onPress={() => router.back()}>
-            Maybe later
-          </Button>
         </View>
 
         <View style={styles.legalActions}>
@@ -274,6 +286,11 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 36,
+  },
+  topActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
   },
   headerIconWrap: {
     width: 56,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Animated, Easing, View, Text, StyleSheet, ScrollView, Dimensions, Alert, Pressable } from 'react-native';
+import { Animated, Easing, View, Text, StyleSheet, ScrollView, Alert, Pressable, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
@@ -14,7 +14,6 @@ import { listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositori
 import { listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
 
-const { width } = Dimensions.get('window');
 const ACCENT_COLOR = '#1D4ED8';
 
 interface TriggerLog {
@@ -70,7 +69,18 @@ const TRIGGER_LABELS: { [key: string]: string } = {
   'Other': 'Other',
 };
 
+const TRIGGER_SHORT_LABELS: { [key: string]: string } = {
+  'Dog_OffLeash': 'Dog Off',
+  'Dog_OnLeash': 'Dog On',
+  'Human': 'Human',
+  'Bike': 'Bike',
+  'Car': 'Car',
+  'Noise': 'Noise',
+  'Other': 'Other',
+};
+
 export default function ProgressScreen() {
+  const { width: windowWidth } = useWindowDimensions();
   const [logs, setLogs] = useState<TriggerLog[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalLogs: 0,
@@ -97,6 +107,14 @@ export default function ProgressScreen() {
     refresh: refreshSubscription,
   } = usePremiumGate('progress-report-export');
   const entranceAnim = useRef(new Animated.Value(0)).current;
+  const isTablet = windowWidth >= 768;
+  const contentHorizontalPadding = isTablet ? 28 : 24;
+  const contentColumnWidth = Math.max(280, Math.min(windowWidth - contentHorizontalPadding * 2, 960));
+  const chartWidth = Math.min(contentColumnWidth, isTablet ? 860 : contentColumnWidth);
+  const barChartMinWidth = Object.keys(TRIGGER_LABELS).length * (isTablet ? 92 : 82);
+  const barChartWidth = Math.max(chartWidth, barChartMinWidth);
+  const shouldScrollBarChart = barChartWidth > chartWidth;
+  const heatmapCardWidth = Math.min(chartWidth, isTablet ? 620 : chartWidth);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -305,7 +323,7 @@ export default function ProgressScreen() {
       }
     });
 
-    const labels = Object.keys(triggerCounts).map(key => TRIGGER_LABELS[key].split(' ')[0]);
+    const labels = Object.keys(triggerCounts).map(key => TRIGGER_SHORT_LABELS[key] || TRIGGER_LABELS[key] || key);
     const data = Object.values(triggerCounts);
 
     return { labels, datasets: [{ data }] };
@@ -518,12 +536,19 @@ export default function ProgressScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingHorizontal: contentHorizontalPadding }]}
+      >
         <Animated.View
-          style={{
-            opacity: entranceAnim,
-            transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
-          }}
+          style={[
+            styles.contentColumn,
+            {
+              width: contentColumnWidth,
+              opacity: entranceAnim,
+              transform: [{ translateY: entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+            },
+          ]}
         >
         <View style={styles.header}>
           <View style={styles.headerTop}>
@@ -704,17 +729,19 @@ export default function ProgressScreen() {
         <View style={styles.chartSection}>
           <Text style={styles.chartTitle}>Reactions Over Time</Text>
           {logs.length > 0 ? (
-            <LineChart
-              data={getLineChartData()}
-              width={width - 48}
-              height={220}
-              chartConfig={chartConfig}
-              bezier
-              style={styles.chart}
-              fromZero
-            />
+            <View style={styles.chartFrame}>
+              <LineChart
+                data={getLineChartData()}
+                width={chartWidth}
+                height={220}
+                chartConfig={chartConfig}
+                bezier
+                style={styles.chart}
+                fromZero
+              />
+            </View>
           ) : (
-            <View style={styles.emptyChart}>
+            <View style={[styles.emptyChart, { width: chartWidth, alignSelf: 'center' }]}>
               <MaterialCommunityIcons name="chart-line-variant" size={48} color="#D1D5DB" />
               <Text style={styles.emptyChartText}>No data yet</Text>
               <Text style={styles.emptyChartSubtext}>Start logging triggers to see your progress</Text>
@@ -726,19 +753,34 @@ export default function ProgressScreen() {
         <View style={styles.chartSection}>
           <Text style={styles.chartTitle}>Triggers by Type</Text>
           {logs.length > 0 ? (
-            <BarChart
-              data={getBarChartData()}
-              width={width - 48}
-              height={200}
-              chartConfig={barChartConfig}
-              style={styles.chart}
-              fromZero
-              showValuesOnTopOfBars
-              yAxisLabel=""
-              yAxisSuffix=""
-            />
+            <>
+              <ScrollView
+                horizontal={shouldScrollBarChart}
+                showsHorizontalScrollIndicator={shouldScrollBarChart}
+                persistentScrollbar={shouldScrollBarChart}
+                bounces={false}
+                contentContainerStyle={[styles.chartFrame, shouldScrollBarChart && styles.chartFrameScrollable]}
+              >
+                <BarChart
+                  data={getBarChartData()}
+                  width={barChartWidth}
+                  height={200}
+                  chartConfig={barChartConfig}
+                  style={styles.chart}
+                  fromZero
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                />
+              </ScrollView>
+              {shouldScrollBarChart ? (
+                <View style={styles.chartScrollHintRow}>
+                  <MaterialCommunityIcons name="gesture-swipe-horizontal" size={14} color="#64748B" />
+                  <Text style={styles.chartScrollHintText}>Swipe to see all triggers</Text>
+                </View>
+              ) : null}
+            </>
           ) : (
-            <View style={styles.emptyChart}>
+            <View style={[styles.emptyChart, { width: chartWidth, alignSelf: 'center' }]}> 
               <MaterialCommunityIcons name="chart-bar" size={48} color="#D1D5DB" />
               <Text style={styles.emptyChartText}>No data yet</Text>
             </View>
@@ -749,7 +791,7 @@ export default function ProgressScreen() {
         <View style={styles.chartSection}>
           <Text style={styles.chartTitle}>Good Days vs Bad Days</Text>
           {heatmapDays.length > 0 ? (
-            <View style={styles.heatmapCard}>
+            <View style={[styles.heatmapCard, { width: heatmapCardWidth, alignSelf: 'center' }]}>
               <Text style={styles.heatmapSubtitle}>Last 6 weeks</Text>
               <View style={styles.heatmapGrid}>
                 {heatmapWeeks.map((week, weekIndex) => (
@@ -784,7 +826,7 @@ export default function ProgressScreen() {
               </Text>
             </View>
           ) : (
-            <View style={styles.emptyChart}>
+            <View style={[styles.emptyChart, { width: chartWidth, alignSelf: 'center' }]}>
               <MaterialCommunityIcons name="calendar-month-outline" size={48} color="#D1D5DB" />
               <Text style={styles.emptyChartText}>No heatmap data yet</Text>
             </View>
@@ -896,8 +938,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 24,
+    paddingTop: 24,
     paddingBottom: 120,
+  },
+  contentColumn: {
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     marginBottom: 24,
@@ -1009,6 +1055,24 @@ const styles = StyleSheet.create({
   chart: {
     borderRadius: 16,
   },
+  chartFrame: {
+    alignItems: 'center',
+  },
+  chartFrameScrollable: {
+    paddingHorizontal: 4,
+  },
+  chartScrollHintRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  chartScrollHintText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
   heatmapCard: {
     backgroundColor: '#EFF6FF',
     borderRadius: 16,
@@ -1024,16 +1088,20 @@ const styles = StyleSheet.create({
   },
   heatmapGrid: {
     flexDirection: 'row',
-    gap: 6,
+    width: '100%',
+    justifyContent: 'space-between',
     marginBottom: 14,
   },
   heatmapWeekColumn: {
+    flex: 1,
+    alignItems: 'center',
     gap: 6,
   },
   heatmapCell: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: '78%',
+    maxWidth: 72,
+    aspectRatio: 1,
+    borderRadius: 10,
   },
   heatmapLegend: {
     flexDirection: 'row',

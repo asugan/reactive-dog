@@ -252,17 +252,29 @@ export default function SettingsScreen() {
             </View>
             {restoreError || subscriptionError ? <Text style={styles.subscriptionError}>{restoreError || subscriptionError}</Text> : null}
 
-            <View style={styles.subscriptionActions}>
-              <Button mode="outlined" onPress={loadSubscriptionStatus} disabled={isLoadingSubscription || isRestoring}>
+            <View style={styles.dataActions}>
+              <Button mode="outlined" style={styles.dataActionButton} onPress={loadSubscriptionStatus} disabled={isLoadingSubscription || isRestoring}>
                 Refresh
               </Button>
-              <Button mode="contained" onPress={handleRestorePurchases} loading={isRestoring} disabled={isRestoring || isLoadingSubscription}>
+              <Button
+                mode="contained"
+                style={styles.dataActionButton}
+                onPress={handleRestorePurchases}
+                loading={isRestoring}
+                disabled={isRestoring || isLoadingSubscription}
+              >
                 Restore Purchases
               </Button>
             </View>
 
             {subscriptionStatus !== 'active' && !isLoadingSubscription ? (
-              <Button mode="text" onPress={() => router.push('/paywall')}>
+              <Button
+                mode="contained"
+                buttonColor="#0F766E"
+                textColor="#FFFFFF"
+                style={styles.premiumPlansButton}
+                onPress={() => router.push('/paywall')}
+              >
                 View Premium Plans
               </Button>
             ) : null}
@@ -409,10 +421,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#B45309',
   },
-  subscriptionActions: {
+  premiumPlansButton: {
     marginTop: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
   },
 });
