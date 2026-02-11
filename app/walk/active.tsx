@@ -2,9 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
+import { create as createTriggerLog } from '../../lib/data/repositories/triggerLogRepo';
+import { update as updateWalk } from '../../lib/data/repositories/walkRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dog Off-leash', emoji: '🐕' },
@@ -64,16 +67,10 @@ export default function ActiveWalkScreen() {
 
   const fetchDogProfile = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const records = await pb.collection('dog_profiles').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-
-      if (records.items.length > 0) {
-        setDogId(records.items[0].id);
+      const ownerId = await getLocalOwnerId();
+      const profile = await getByOwnerId(ownerId);
+      if (profile) {
+        setDogId(profile.id);
       }
     } catch (error) {
       console.error('Error fetching dog profile:', error);
@@ -163,7 +160,7 @@ export default function ActiveWalkScreen() {
           onPress: async () => {
             try {
               // Update walk with end time
-              await pb.collection('walks').update(walkId as string, {
+              await updateWalk(walkId as string, {
                 ended_at: new Date().toISOString(),
               });
 
@@ -197,16 +194,12 @@ export default function ActiveWalkScreen() {
     }
 
     try {
-      const user = getCurrentUser();
-      if (!user) {
-        Alert.alert('Error', 'Not authenticated');
-        return;
-      }
+      const ownerId = await getLocalOwnerId();
 
       // Log trigger during walk
-      await pb.collection('trigger_logs').create({
+      await createTriggerLog({
         dog_id: dogId,
-        owner_id: user.id,
+        owner_id: ownerId,
         trigger_type: selectedTrigger,
         severity: selectedSeverity,
         location_latitude: location?.latitude || null,

@@ -3,7 +3,8 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import { pb, initializePocketBase, isAuthenticated, subscribeToAuthChanges } from '../lib/pocketbase';
+import { getByOwnerId } from '../lib/data/repositories/dogProfileRepo';
+import { getLocalOwnerId, initializeLocalApp } from '../lib/localApp';
 import { AnimatedSplashScreen } from '../components/AnimatedSplashScreen';
 // TODO: PostHog - import { PostHogProvider } from '../lib/posthog';
 
@@ -77,52 +78,54 @@ function useProtectedRoute() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      await initializePocketBase();
-      
-      if (!isAuthenticated()) {
-        // Not authenticated, should be in auth group
-        if (segments[0] !== '(auth)') {
-          router.replace('/(auth)/login');
+    let mounted = true;
+
+    const checkRoute = async () => {
+      await initializeLocalApp();
+      const ownerId = await getLocalOwnerId();
+      const topSegment = segments[0];
+
+      if (!ownerId) {
+        if (topSegment !== 'onboarding') {
+          router.replace('/onboarding');
         }
-      } else {
-        // Authenticated, check if they have a dog profile
-        const userId = pb.authStore.model?.id;
-        try {
-          const dogProfiles = await pb.collection('dog_profiles').getList(1, 1, {
-            filter: `owner_id = "${userId}"`,
-            $autoCancel: false,
-          });
-          
-          const hasDogProfile = dogProfiles.items.length > 0;
-          const inOnboarding = segments[0] === 'onboarding';
-          const inAuth = segments[0] === '(auth)';
-          
-          if (!hasDogProfile && !inOnboarding && !inAuth) {
-            // No dog profile and not in onboarding, redirect to onboarding
-            router.replace('/onboarding');
-          } else if (hasDogProfile && (inOnboarding || inAuth)) {
-            // Has dog profile but in onboarding or auth, redirect to main app
-            router.replace('/(tabs)');
-          }
-        } catch (error) {
-          console.error('Error checking dog profile:', error);
+
+        if (mounted) {
+          setIsReady(true);
         }
+
+        return;
       }
-      
-      setIsReady(true);
+
+      try {
+        const profile = await getByOwnerId(ownerId);
+        const hasDogProfile = Boolean(profile);
+        const inOnboarding = topSegment === 'onboarding';
+
+        if (!hasDogProfile && !inOnboarding) {
+          router.replace('/onboarding');
+        } else if (hasDogProfile && (inOnboarding || !topSegment)) {
+          router.replace('/(tabs)');
+        }
+      } catch (error) {
+        console.error('Error checking local dog profile:', error);
+      }
+
+      if (mounted) {
+        setIsReady(true);
+      }
     };
 
-    checkAuth();
-
-    // Listen for auth changes
-    const unsubscribe = subscribeToAuthChanges(() => {
-      if (!isAuthenticated()) {
-        router.replace('/(auth)/login');
+    checkRoute().catch((error) => {
+      console.error('Route guard failed:', error);
+      if (mounted) {
+        setIsReady(true);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+    };
   }, [router, segments]);
 
   return isReady;

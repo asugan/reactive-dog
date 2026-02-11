@@ -24,13 +24,13 @@ export default function WelcomeScreen() {
             <Text style={styles.statLabel}>of dogs are reactive</Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statNumber}>47k+</Text>
-            <Text style={styles.statLabel}>owners in community</Text>
+            <Text style={styles.statNumber}>5x</Text>
+            <Text style={styles.statLabel}>faster to get started</Text>
           </View>
         </View>
 
         <Text style={styles.description}>
-          Track triggers, train with proven methods, and connect with others who understand.
+          Track triggers, train with proven methods, and build calmer daily walks.
         </Text>
       </View>
 

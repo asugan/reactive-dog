@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { pb, getCurrentUser } from '../../lib/pocketbase';
+import { getByOwnerId, update as updateDogProfile } from '../../lib/data/repositories/dogProfileRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 const TECHNIQUES: Record<string, {
   name: string;
@@ -61,18 +62,13 @@ export default function TechniqueScreen() {
   const handleComplete = async () => {
     try {
       // Update dog profile with recommended technique
-      const user = getCurrentUser();
-      
-      if (user) {
-        const dogProfiles = await pb.collection('dog_profiles').getList(1, 1, {
-          filter: `owner_id = "${user.id}"`,
+      const ownerId = await getLocalOwnerId();
+      const profile = await getByOwnerId(ownerId);
+
+      if (profile) {
+        await updateDogProfile(profile.id, {
+          training_method: technique,
         });
-        
-        if (dogProfiles.items.length > 0) {
-          await pb.collection('dog_profiles').update(dogProfiles.items[0].id, {
-            training_method: technique,
-          });
-        }
       }
     } catch (error) {
       console.error('Error updating training method:', error);

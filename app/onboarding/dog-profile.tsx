@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { pb, initializePocketBase } from '../../lib/pocketbase';
+import { create as createDogProfile } from '../../lib/data/repositories/dogProfileRepo';
+import { setOnboardingComplete } from '../../lib/data/repositories/settingsRepo';
+import { getLocalOwnerId, initializeLocalApp } from '../../lib/localApp';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dogs (off-leash)', emoji: '🐕' },
@@ -37,30 +39,20 @@ export default function DogProfileScreen() {
     
     setLoading(true);
     try {
-      // Direct check from pb.authStore which is the source of truth
-      let user = pb.authStore.model;
-      
-      if (!user) {
-        // Try one more time after a small delay or re-initialization
-        await initializePocketBase();
-        user = pb.authStore.model;
-      }
-      
-      if (!user) {
-        alert('Authentication session not found. Please log in again.');
-        router.replace('/(auth)/login');
-        return;
-      }
+      await initializeLocalApp();
+      const ownerId = await getLocalOwnerId();
 
-      await pb.collection('dog_profiles').create({
-        owner_id: user.id,
+      await createDogProfile({
+        owner_id: ownerId,
         name: name.trim(),
         breed: breed.trim() || '',
-        age: age ? parseInt(age) : 0,
-        weight: weight ? parseFloat(weight) : 0,
+        age: age ? parseInt(age, 10) || 0 : 0,
+        weight: weight ? parseFloat(weight) || 0 : 0,
         triggers: selectedTriggers,
         reactivity_level: reactivityLevel,
       });
+
+      await setOnboardingComplete(true);
 
       router.push('/onboarding/assessment');
     } catch (error: unknown) {

@@ -1,19 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Button, Card, Divider } from 'react-native-paper';
+import { Button, Card, Divider, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getCurrentUser, logout } from '../../lib/pocketbase';
+import { clearAllLocalData, exportLocalData, importLocalData } from '../../lib/data/repositories/settingsRepo';
 import { getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
 import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 export default function SettingsScreen() {
-  const user = getCurrentUser();
+  const [ownerId, setOwnerId] = useState<string>('-');
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+
+  const [exportingData, setExportingData] = useState(false);
+  const [showImportEditor, setShowImportEditor] = useState(false);
+  const [importJson, setImportJson] = useState('');
+  const [importingData, setImportingData] = useState(false);
+  const [lastExportPreview, setLastExportPreview] = useState<string | null>(null);
+
+  const refreshOwnerId = useCallback(async () => {
+    const localOwnerId = await getLocalOwnerId();
+    setOwnerId(localOwnerId);
+  }, []);
 
   const loadSubscriptionStatus = useCallback(async () => {
     setIsLoadingSubscription(true);
@@ -31,8 +43,11 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
+    refreshOwnerId().catch((error) => {
+      console.error('Failed to load local owner id', error);
+    });
     loadSubscriptionStatus();
-  }, [loadSubscriptionStatus]);
+  }, [loadSubscriptionStatus, refreshOwnerId]);
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
@@ -47,7 +62,7 @@ export default function SettingsScreen() {
         hasAccess ? 'Restored' : 'Nothing to restore',
         hasAccess
           ? 'Premium erisiminiz bu cihaz icin geri yuklendi.'
-          : 'Bu hesap icin geri yuklenecek aktif bir abonelik bulunamadi.'
+          : 'Bu cihaz icin geri yuklenecek aktif bir abonelik bulunamadi.'
       );
     } catch (error) {
       console.error('Failed to restore purchases', error);
@@ -58,63 +73,146 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: () => {
-          logout();
-          router.replace('/(auth)/login');
+  const handleExportData = async () => {
+    setExportingData(true);
+    try {
+      const payload = await exportLocalData();
+      const json = JSON.stringify(payload, null, 2);
+      setLastExportPreview(json.slice(0, 280));
+
+      await Share.share({
+        title: 'Reactive Dog Local Data',
+        message: json,
+      });
+    } catch (error) {
+      console.error('Failed to export local data', error);
+      Alert.alert('Export failed', 'Local data export failed. Please try again.');
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  const handleImportData = async () => {
+    if (!importJson.trim()) {
+      Alert.alert('Missing data', 'Please paste the exported JSON first.');
+      return;
+    }
+
+    setImportingData(true);
+    try {
+      const parsed = JSON.parse(importJson);
+      await importLocalData(parsed);
+      await refreshOwnerId();
+
+      setImportJson('');
+      setShowImportEditor(false);
+      Alert.alert('Import complete', 'Local data imported successfully.');
+    } catch (error) {
+      console.error('Failed to import local data', error);
+      Alert.alert('Import failed', 'Invalid JSON or unsupported backup format.');
+    } finally {
+      setImportingData(false);
+    }
+  };
+
+  const handleDeleteAllData = () => {
+    Alert.alert(
+      'Delete all local data?',
+      'This removes all walks, logs, and dog profile data from this device. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearAllLocalData();
+              await refreshOwnerId();
+              router.replace('/onboarding');
+            } catch (error) {
+              console.error('Failed to clear local data', error);
+              Alert.alert('Delete failed', 'Could not clear local data. Please try again.');
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Manage your account and app preferences</Text>
+        <Text style={styles.subtitle}>Manage local data and subscription preferences</Text>
 
         <View style={styles.profileCard}>
           <View style={styles.avatarWrap}>
-            <MaterialCommunityIcons name="dog" size={28} color="#0F766E" />
+            <MaterialCommunityIcons name="cellphone-lock" size={26} color="#0F766E" />
           </View>
           <View style={styles.profileMeta}>
-            <Text style={styles.profileTitle}>Petopia Account</Text>
-            <Text style={styles.profileEmail}>{user?.email ?? 'Unknown user'}</Text>
+            <Text style={styles.profileTitle}>This Device</Text>
+            <Text style={styles.profileEmail}>Owner ID: {ownerId}</Text>
           </View>
         </View>
 
         <Card style={styles.sectionCard}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Account</Text>
+            <Text style={styles.sectionTitle}>Local Data</Text>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Email</Text>
-              <Text style={styles.rowValue}>{user?.email ?? '-'}</Text>
+              <Text style={styles.rowLabel}>Storage</Text>
+              <Text style={styles.rowValue}>On-device SQLite</Text>
             </View>
             <Divider style={styles.divider} />
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>User ID</Text>
-              <Text style={styles.rowValue}>{user?.id ?? '-'}</Text>
+              <Text style={styles.rowLabel}>Local owner id</Text>
+              <Text style={styles.rowValue}>{ownerId}</Text>
             </View>
-          </Card.Content>
-        </Card>
 
-        <Card style={styles.sectionCard}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Security</Text>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Authentication</Text>
-              <Text style={styles.rowValue}>Email / OAuth (Google, Apple)</Text>
+            <View style={styles.dataActions}>
+              <Button mode="contained" onPress={handleExportData} loading={exportingData} disabled={exportingData || importingData}>
+                Export JSON
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => setShowImportEditor((value) => !value)}
+                disabled={importingData || exportingData}
+              >
+                {showImportEditor ? 'Hide Import' : 'Import JSON'}
+              </Button>
             </View>
-            <Divider style={styles.divider} />
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Session</Text>
-              <Text style={styles.rowValue}>Active</Text>
-            </View>
+
+            {showImportEditor ? (
+              <View style={styles.importWrap}>
+                <TextInput
+                  mode="outlined"
+                  label="Paste exported JSON"
+                  multiline
+                  value={importJson}
+                  onChangeText={setImportJson}
+                  style={styles.importInput}
+                />
+                <Button mode="contained" onPress={handleImportData} loading={importingData} disabled={importingData || exportingData}>
+                  Import now
+                </Button>
+              </View>
+            ) : null}
+
+            {lastExportPreview ? (
+              <View style={styles.previewCard}>
+                <Text style={styles.previewTitle}>Last export preview</Text>
+                <Text style={styles.previewText}>{lastExportPreview}...</Text>
+              </View>
+            ) : null}
+
+            <Button
+              mode="contained"
+              buttonColor="#DC2626"
+              style={styles.deleteButton}
+              onPress={handleDeleteAllData}
+              disabled={importingData || exportingData}
+            >
+              Delete all local data
+            </Button>
           </Card.Content>
         </Card>
 
@@ -133,6 +231,7 @@ export default function SettingsScreen() {
               </Text>
             </View>
             {subscriptionError ? <Text style={styles.subscriptionError}>{subscriptionError}</Text> : null}
+
             <View style={styles.subscriptionActions}>
               <Button mode="outlined" onPress={loadSubscriptionStatus} disabled={isLoadingSubscription || isRestoring}>
                 Refresh
@@ -141,21 +240,12 @@ export default function SettingsScreen() {
                 Restore Purchases
               </Button>
             </View>
+
             {!isPremium && !isLoadingSubscription ? (
               <Button mode="text" onPress={() => router.push('/paywall')}>
                 View Premium Plans
               </Button>
             ) : null}
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.dangerCard}>
-          <Card.Content>
-            <Text style={styles.dangerTitle}>Danger Zone</Text>
-            <Text style={styles.dangerText}>Logging out removes your local session from this device.</Text>
-            <Button mode="contained" buttonColor="#DC2626" style={styles.logoutButton} onPress={handleLogout}>
-              Log out
-            </Button>
           </Card.Content>
         </Card>
       </ScrollView>
@@ -215,7 +305,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   profileEmail: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0F172A',
   },
@@ -250,6 +340,39 @@ const styles = StyleSheet.create({
   divider: {
     marginVertical: 10,
   },
+  dataActions: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  importWrap: {
+    marginTop: 14,
+    gap: 10,
+  },
+  importInput: {
+    minHeight: 140,
+  },
+  previewCard: {
+    marginTop: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+  },
+  previewTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  previewText: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  deleteButton: {
+    marginTop: 14,
+  },
   premiumText: {
     color: '#166534',
   },
@@ -267,25 +390,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 10,
-  },
-  dangerCard: {
-    borderRadius: 16,
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1,
-    borderColor: '#FED7D7',
-  },
-  dangerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#991B1B',
-    marginBottom: 6,
-  },
-  dangerText: {
-    fontSize: 13,
-    color: '#7F1D1D',
-    marginBottom: 12,
-  },
-  logoutButton: {
-    marginTop: 2,
   },
 });

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { pb } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { update as updateWalk } from '../../lib/data/repositories/walkRepo';
 
 const SUCCESS_LABELS: { [key: number]: string } = {
   1: 'Very challenging',
@@ -41,7 +41,7 @@ export default function WalkSummaryScreen() {
     setLoading(true);
     try {
       // Update walk with summary data
-      await pb.collection('walks').update(walkId as string, {
+      await updateWalk(walkId as string, {
         success_rating: successRating,
         technique_used: techniqueUsed,
         notes: notes.trim() || null,

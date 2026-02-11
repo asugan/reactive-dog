@@ -15,7 +15,6 @@ const iconMap = {
   'walk-tab': { active: 'walk', inactive: 'walk' },
   log: { active: 'plus-circle', inactive: 'plus-circle-outline' },
   progress: { active: 'chart-line', inactive: 'chart-line-variant' },
-  community: { active: 'forum', inactive: 'forum-outline' },
   settings: { active: 'cog', inactive: 'cog-outline' },
 } as const;
 
@@ -99,20 +98,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <MaterialCommunityIcons
               name={iconMap.progress[focused ? 'active' : 'inactive']}
-              color={color}
-              size={size}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="community"
-        options={{
-          title: 'Community',
-          tabBarActiveBackgroundColor: TAB_COLORS.activeBackground,
-          tabBarIcon: ({ color, size, focused }) => (
-            <MaterialCommunityIcons
-              name={iconMap.community[focused ? 'active' : 'inactive']}
               color={color}
               size={size}
             />

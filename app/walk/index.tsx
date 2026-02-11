@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
+import { create as createWalk } from '../../lib/data/repositories/walkRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 const TECHNIQUE_OPTIONS = [
   { 
@@ -39,7 +41,7 @@ interface DogProfile {
   id: string;
   name: string;
   triggers: string[];
-  training_method: string;
+  training_method: string | null;
 }
 
 interface WeeklyPlan {
@@ -95,19 +97,12 @@ export default function WalkSetupScreen() {
 
   const fetchDogProfile = useCallback(async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
+      const localOwnerId = await getLocalOwnerId();
+      setOwnerId(localOwnerId);
+      await loadWeeklyPlan(localOwnerId);
 
-      setOwnerId(user.id);
-      await loadWeeklyPlan(user.id);
-
-      const records = await pb.collection('dog_profiles').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-
-      if (records.items.length > 0) {
-        const data = records.items[0] as unknown as DogProfile;
+      const data = await getByOwnerId(localOwnerId);
+      if (data) {
         setDogProfile(data);
         // Pre-select technique based on dog's training method
         if (data.training_method === 'BAT') {
@@ -190,16 +185,12 @@ export default function WalkSetupScreen() {
 
     setLoading(true);
     try {
-      const user = getCurrentUser();
-      if (!user) {
-        Alert.alert('Error', 'Not authenticated');
-        return;
-      }
+      const localOwnerId = await getLocalOwnerId();
 
       // Create walk record
-      const walk = await pb.collection('walks').create({
+      const walk = await createWalk({
         dog_id: dogProfile.id,
-        owner_id: user.id,
+        owner_id: localOwnerId,
         distance_threshold_meters: distanceThreshold,
         started_at: new Date().toISOString(),
       });

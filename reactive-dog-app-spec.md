@@ -1,469 +1,138 @@
-# Reactive Dog Training App - Product Specification
-
-## Overview
-Mobile app for owners of reactive dogs (dogs that bark, lunge, or exhibit aggressive behavior toward other dogs, people, or stimuli).
-
-**Target MRR:** $200-300
-**Platform:** React Native (iOS & Android)
-**Monetization:** Freemium subscription ($4.99/mo)
-
----
-
-## Problem Statement
-
-Reactive dog owners face:
-- Stressful, embarrassing walks
-- Guilt about socialization failures
-- Expensive behaviorist fees ($100-300/hour)
-- Isolation and lack of support
-
-**Target User:** 25-45, urban, dog = "child replacement", follows #reactivedogs on Instagram
-
----
-
-## MVP Feature Set (V1)
-
-### 1. Trigger Logging
-```
-- Trigger types: Dog (on/off-leash), Human, Bike, Car, Noise, Other
-- Distance tracking: "Dog was 5m away, reacted at 10m"
-- Reaction severity: 1-5 scale (alert → bark → lunge → bite attempt)
-- Context: Time, GPS location, weather, dog's energy level, last meal
-- Photo capture: Document specific triggers
-- Notes: Free text for patterns
-```
-
-### 2. BAT Training Mode (✅ Implemented)
-```
-✅ Pre-walk checklist: Equipment, treats, mindset check
-✅ Distance threshold: Configure alert distance (5-50m)
-✅ Active walk mode: GPS tracking, timer, pause/resume
-✅ Technique reminders: U-Turn, Find It, Look at That
-✅ Quick trigger logging: 2-tap logging during walk
-✅ Real-time stats: Duration, trigger count, location status
-✅ Post-walk reflection: Success rating (1-5), technique used, notes
-✅ Weekly BAT session planner (day selection + weekly session goal)
-```
-
-### 3. Progress Analytics (✅ Implemented)
-```
-✅ Reaction frequency over time (line chart)
-✅ Distance threshold improvements (via BAT walk mode)
-✅ "Good days vs bad days" calendar heatmap (6-week visual trend)
-✅ Trigger frequency by type (bar chart)
-✅ Statistics cards:
-   - Total reactions
-   - Average severity (with color coding)
-   - This week vs last week comparison
-✅ Time range selector (7/30/90 days)
-✅ Recent activity list
-✅ Interactive Trigger Map - Visual hotspot analysis:
-   - Color-coded pins for each trigger type on map
-   - GPS coordinates from all walks and quick logs
-   - Auto-zoom to fit all trigger locations
-   - Tap-to-view details (trigger type, severity, date)
-   - Legend showing trigger type colors
-✅ PDF export for behaviorists (professional reports) - Implemented with:
-   - HTML-based report generation
-   - Professional layout with dog profile, statistics, and logs
-   - Shareable PDF via native print/share dialogs
-```
-
-### 4. Community Features (✅ Implemented)
-```
-✅ Anonymous support forum (text-only, no photos)
-✅ "Win of the day" micro-posts
-✅ Question posts for advice
-✅ Success stories library
-✅ Anonymous display with auto-generated names
-✅ Like system for engagement
-✅ Opt-in local owner map (for meetups) with:
-   - Privacy-first opt-in toggle (off by default)
-   - Approximate-only location sharing (rounded coordinates)
-   - Nearby owner visualization on interactive map
-✅ Expert Q&A sessions (behaviorist AMAs) with:
-   - Upcoming session cards in community tab
-   - RSVP/Un-RSVP flow
-   - Backend persistence via PocketBase (sessions + RSVPs)
-```
-
----
-
-## Technical Architecture
-
-### Tech Stack
-```typescript
-// Core
-- React Native with Expo
-- TypeScript
-
-// Backend
-- PocketBase (Auth, Database, Storage)
-
-// Maps & Location
-- expo-location (GPS tracking)
-- react-native-maps (trigger pinning)
-
-// UI/Charts
-- react-native-chart-kit (analytics)
-- react-native-paper or native-base (UI kit)
-
-// Payments
-- RevenueCat (subscription management)
-
-// Notifications
-- expo-notifications (training reminders)
-```
-
-### Project Structure
-```
-app/
-├── (auth)/
-│   ├── login.tsx
-│   ├── signup.tsx
-│   └── _layout.tsx
-├── (tabs)/
-│   ├── index.tsx         # Dashboard
-│   ├── log.tsx           # Quick trigger log
-│   ├── progress.tsx      # Charts & stats
-│   ├── community.tsx     # Forum
-│   └── _layout.tsx
-├── walk/
-│   ├── _layout.tsx       # Walk stack navigator
-│   ├── index.tsx         # Pre-walk setup & checklist
-│   ├── active.tsx        # Active walk mode with GPS tracking
-│   └── summary.tsx       # Post-walk reflection
-├── settings/
-│   └── profile.tsx       # (future)
-├── onboarding/
-│   ├── _layout.tsx       # Stack navigator
-│   ├── index.tsx         # Welcome + stats
-│   ├── dog-profile.tsx   # Dog info & triggers
-│   ├── assessment.tsx    # 4-question reactivity quiz
-│   └── technique.tsx     # Training method recommendation
-├── _layout.tsx           # Root with auth/onboarding guards
-├── lib/
-│   ├── pocketbase.ts     # PocketBase client
-│   └── posthog.ts        # PostHog config
-└── pocketbase_collections.json
-```
-
----
-
-## Monetization Strategy
-
-### Freemium Model
-
-| Feature | Free | Pro ($4.99/month) |
-|---------|------|-------------------|
-| Daily logs | 3/day | Unlimited |
-| Data history | 30 days | Lifetime |
-| Basic charts | ✅ | ✅ |
-| Advanced analytics | ❌ | ✅ |
-| PDF reports | ❌ | ✅ |
-| Community posting | Read-only | Full access |
-| Expert content | Limited | Full library |
-| Priority support | ❌ | ✅ |
-
-### Additional Revenue
-- **Behaviorist marketplace:** Book consultations ($50-100, 20% commission)
-- **Custom training plans:** PDF guides ($19.99)
-- **Equipment affiliate:** Gentle leaders, treat pouches
-
-### Pricing Psychology
-- Annual plan: $39.99/year (33% savings)
-- Lifetime deal: $99 (for early adopters)
-
----
-
-## User Flow
-
-### Onboarding (✅ Implemented)
-1. **Welcome Screen:** "You're not alone - 30% of dogs are reactive" with statistics and motivation
-2. **Dog Profile:** Collect name, breed, age, weight, and reactivity level (1-5 scale)
-3. **Trigger Selection:** Multi-select trigger types (Dogs on/off-leash, Humans, Bikes, Cars, Noise, Other)
-4. **Assessment Quiz:** 4-question reactivity assessment to determine:
-   - Behavioral patterns (staring vs barking vs fleeing)
-   - Trigger distance awareness
-   - Food responsiveness
-   - Training goals
-5. **Technique Match:** Algorithm auto-suggests:
-   - **BAT** (Behavior Adjustment Training) - For dogs who bark/lunge
-   - **CC/DS** (Counter-Conditioning/Desensitization) - For fearful/anxious dogs
-   - **LAT** (Look at That) - For dogs who stare intensely
-6. **Auto-save:** Dog profile saved to PocketBase with recommended technique
-
-### Daily Usage
-1. **Morning:** Check dashboard for yesterday's summary
-2. **Pre-walk:** Open app, set today's goals
-3. **During walk:** Quick log trigger (2 taps) or activate BAT mode
-4. **Post-walk:** Rate success, add notes
-5. **Evening:** Check community for support
-
----
-
-## Growth Strategy
-
-### Pre-Launch (Month 1-2)
-
-**Content Marketing:**
-- Instagram/TikTok: @reactiveroverapp
-  - Educational: "It's not aggression, it's threshold management"
-  - Relatable memes: "When your dog sees another dog 100m away"
-  - Success transformations
-
-**Community Building:**
-- Reddit r/reactivedogs (47k members)
-  - Value-first posts: Free BAT guides
-  - Soft launch: "Building this for my reactive dog, need beta testers"
-  
-- Facebook Groups:
-  - Reactive Dogs Support Group
-  - Fearful Dogs
-
-**Partnerships:**
-- Local certified behaviorists (30% affiliate commission)
-- Dog trainers (recommend app to clients)
-- Veterinary behaviorists (professional tool positioning)
-
-### Launch Strategy
-
-**Beta Program:**
-- 50 reactive dog owners from Reddit
-- Private TestFlight/Play Console
-- Weekly feedback calls
-- Lifetime 50% discount for beta users
-
-**Launch Channels:**
-1. Product Hunt ("Tools for dog owners")
-2. r/reactivedogs announcement post
-3. Instagram influencer partnerships (micro-influencers, 10k-50k followers)
-4. Email list of behaviorists
-
----
-
-## V2+ Roadmap
-
-### Version 2.0 (Months 4-6)
-- **Equipment Integration:** Fi collar, Whistle (activity + pulse data)
-- **AI Photo Analysis:** Risk assessment of approaching dogs
-- **Advanced BAT:** Video tutorials, step-by-step protocols
-- **Vet Behaviorist Marketplace:** Book consultations in-app
-
-### Version 3.0 (Months 7-12)
-- **Group Walks:** Organized reactive-friendly routes
-- **Voice Logging:** Siri/Google Assistant integration
-- **Medication Tracking:** For dogs on behavioral meds
-- **Weather Integration:** "High reactivity days" prediction
-
-### Future Ideas
-- **Reactive Cat Mode:** Expand to other pets
-- **Trainer Dashboard:** For professionals managing multiple clients
-- **Research Partnership:** Data sharing with veterinary universities
-
----
-
-## Risk Analysis
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Users abandon app on bad days | High | High | Widget + 2-tap quick log, gentle reminders |
-| Too technical (jargon) | Medium | Medium | Quiz-based onboarding, plain language |
-| Competition from general apps | Medium | Low | Niche focus, community depth |
-| Behaviorists view as threat | Low | Medium | Position as professional tool, partnerships |
-| Low retention after improvement | Medium | High | Community features, "pay it forward" program |
-
----
-
-## Success Metrics
-
-**Month 3 Targets:**
-- 500 downloads
-- 100 MAU (Monthly Active Users)
-- 15% conversion to Pro
-- $75 MRR
-
-**Month 6 Targets:**
-- 2,000 downloads
-- 600 MAU
-- 20% conversion
-- $240 MRR
-
-**Month 12 Targets:**
-- 10,000 downloads
-- 3,000 MAU
-- 25% conversion + marketplace
-- $600+ MRR
-
-**Key Metrics:**
-- DAU/MAU ratio (aim for >30%)
-- Session frequency (3+ walks/week)
-- Feature adoption (BAT mode usage)
-- Community engagement (posts per user)
-- Churn rate (target <5%/month)
-
----
-
-## Competitive Analysis
-
-### Direct Competitors
-**1. DogLog**
-- Pros: Simple, free
-- Cons: Generic, no reactive-specific features
-- Gap: No BAT training, no community
-
-**2. Puppr (training app)**
-- Pros: Video tutorials
-- Cons: General obedience, not reactive-focused
-- Gap: No logging/analytics
-
-**3. Biscuit (habit tracker)**
-- Pros: Beautiful UI
-- Cons: Not dog-specific
-- Gap: No training protocols
-
-### Indirect Competitors
-- Pen & paper logs
-- Excel spreadsheets
-- Instagram communities (manual)
-
-**Our Advantage:** Purpose-built for reactive dogs with evidence-based protocols + supportive community.
-
----
-
-## Content & Education
-
-### In-App Library
-1. **BAT 101:** Beginner guide to Behavior Adjustment Training
-2. **Trigger Stacking:** Why some days are worse than others
-3. **Emergency U-Turn:** Step-by-step technique
-4. **Treat Delivery:** Timing and positioning
-5. **Equipment Guide:** Harnesses, head halters, treat pouches
-
-### Video Content
-- "Day in the life" with reactive dogs
-- Success story interviews
-- Expert tips (behaviorists)
-- Technique demonstrations
-
----
-
-## Legal & Ethics
-
-### Data Privacy
-- Health data encrypted at rest
-- Option for local-only storage (no cloud)
-- Community posts anonymized by default
-- No selling user data
-
-### Disclaimer
-Required in-app:
-```
-This app is a training tool and journal, not a substitute 
-for professional veterinary behaviorist consultation. 
-If your dog has a bite history or severe aggression, 
-please consult a certified professional.
-```
-
-### Certifications to Mention
-- References to veterinary behaviorist protocols
-- CCPDT (Certification Council for Professional Dog Trainers) alignment
-- IAABC (International Association of Animal Behavior Consultants) standards
-
----
-
-## Next Steps
-
-### Week 1-2: Research & Validation
-- [ ] Join r/reactivedogs, read 50+ posts
-- [ ] Interview 5 reactive dog owners
-- [ ] Survey: "What do you currently use?"
-- [ ] Competitor app deep-dive
-
-### Week 3-4: Design & Prototype (✅ Completed)
-- [x] Create wireframes (Figma)
-- [x] Design database schema
-- [x] Set up Expo project
-- [x] PocketBase setup and schema import
-- [x] Implement onboarding screens
-
-### Month 2: MVP Development (✅ Completed)
-- [x] Auth & onboarding (✅ Completed)
-- [x] Basic logging functionality (✅ Completed)
-- [x] Progress analytics with charts (✅ Completed)
-  - Line chart: Reactions over time
-  - Bar chart: Triggers by type
-  - Stats cards: Total reactions, avg severity, week-over-week
-  - Time range selector (7/30/90 days)
-- [x] BAT Training Mode (✅ Completed)
-  - Pre-walk checklist & distance threshold setup
-  - Active walk mode with GPS tracking
-  - Technique reminders & quick logging
-  - Post-walk reflection & success rating
-- [x] Beta testing with 5 users
-
-### Month 3: Launch Prep (✅ Updated)
-- [x] Community features (✅ Completed - Feb 2026)
-  - Anonymous forum with post types
-  - Win of the Day, Questions, Success Stories
-  - Like system and filtering
-- [x] PocketBase migration (✅ Completed - Feb 2026)
-- [ ] RevenueCat integration
-- [ ] Beta program (50 users)
-- [ ] Content creation
-
----
-
-## Resources
-
-### Learning
-- BAT 2.0 by Grisha Stewart (book)
-- Control Unleashed by Leslie McDevitt (book)
-- r/reactivedogs wiki
-- Fear Free Pets certification (optional)
-
-### Tools
-- Figma (design)
-- Expo (development)
-- PocketBase (backend)
-- RevenueCat (payments)
-- PostHog (analytics)
-
-### Community
-- r/reactivedogs
-- Reactive Dogs Facebook groups
-- IAABC directory (behaviorist contacts)
-- CCPDT trainer directory
-
----
-
-## Conclusion
-
-This app fills a genuine gap in the pet tech market. Reactive dog owners are:
-- **Desperate for solutions** (high willingness to pay)
-- **Under-served** (no dedicated apps)
-- **Community-oriented** (word-of-mouth potential)
-- **Data-motivated** (love tracking progress)
-
-The combination of practical training tools + emotional support community creates a sticky product with clear monetization path.
-
-**Status Update (January 2026):** MVP is now feature-complete with all core functionality implemented:
-
-✅ **PocketBase Backend** - Auth and collections configured
-✅ **Onboarding Flow** - 5-screen flow with automatic routing
-✅ **Trigger Logging** - Quick 2-tap logging with GPS coordinates
-✅ **Progress Analytics** - Interactive charts, time range selection, statistics cards
-✅ **BAT Training Mode** - Full walk experience with:
-   - Pre-walk checklist & distance threshold configuration
-   - Active walk mode with real-time GPS tracking
-   - Technique reminders (U-Turn, Find It, LAT)
-   - Quick trigger logging during walks
-   - Post-walk reflection with success ratings
-
-**Next Priorities:**
-1. ✅ **Community forum implementation** - Complete with anonymous posts, Win of the Day, Questions, Success Stories, and like system
-2. ✅ **PDF export for behaviorist reports** - Complete with professional report generation
-3. ✅ **PocketBase Migration** - Complete removal of Supabase and migration to PocketBase
-4. Beta testing program launch
-5. PostHog analytics integration
-6. RevenueCat subscription setup
+# Reactive Dog App - Product Specification (Local-first)
+
+## 1) Overview
+
+Reactive Dog is a mobile training companion for owners of reactive dogs.
+
+The product is now intentionally local-first:
+
+- No account requirement
+- No login/signup flow
+- No cloud database required for core usage
+- All user data stored on-device
+
+## 2) Product goals
+
+- Reduce owner stress during reactive walks
+- Make trigger logging very fast in real contexts
+- Provide clear progress signals over days/weeks
+- Keep behavior tracking private and available offline
+
+## 3) Current scope
+
+### In scope
+
+- Dog onboarding and profile setup
+- Trigger logging
+- BAT walk workflow (setup, active, summary)
+- Progress charts, map, and PDF export
+- Local data management in settings (export/import/reset)
+
+### Out of scope
+
+- Community/social feed
+- Multi-user accounts
+- Remote moderation/admin tools
+- Cloud sync/backup
+
+## 4) Core user flows
+
+### Onboarding
+
+1. Welcome
+2. Dog profile creation
+3. Behavior assessment quiz
+4. Recommended technique screen
+5. Enter app tabs
+
+### Daily usage
+
+1. Open dashboard
+2. Start walk or quick-log triggers
+3. Review progress trends
+4. Export/report data when needed
+
+## 5) Technical architecture
+
+### App stack
+
+- React Native + Expo + TypeScript
+- SQLite via `expo-sqlite`
+- Repository-based data access layer
+
+### Data layer
+
+- Database init and migrations: `lib/data/database.ts`
+- Repositories:
+  - `lib/data/repositories/dogProfileRepo.ts`
+  - `lib/data/repositories/triggerLogRepo.ts`
+  - `lib/data/repositories/walkRepo.ts`
+  - `lib/data/repositories/settingsRepo.ts`
+- App bootstrap: `lib/localApp.ts`
+
+### Identity model
+
+- App creates a local owner ID on first run
+- Owner ID is stored in `app_settings`
+- RevenueCat is initialized with this local owner ID
+
+## 6) Local schema
+
+- `migration_meta` - schema versioning
+- `app_settings` - app-level settings (`local_owner_id`, onboarding state, etc.)
+- `dog_profiles` - dog identity and reactivity profile
+- `trigger_logs` - trigger incidents and metadata
+- `walks` - BAT session lifecycle and outcomes
+
+## 7) Feature notes
+
+### Trigger logging
+
+- Supports trigger type, severity, distance, notes, and optional location
+- Designed for low-friction quick entry
+
+### BAT walk mode
+
+- Setup checklist and threshold distance
+- Active mode with timer and quick logs
+- Summary with success rating and technique reflection
+
+### Progress
+
+- Time windows (7/30/90 days)
+- Trend charts and trigger distribution
+- Heatmap and trigger location map
+- PDF export (premium-gated)
+
+### Settings
+
+- Export local data as JSON
+- Import JSON backup
+- Delete all local data with confirmation
+
+## 8) Monetization
+
+- RevenueCat-based subscription model
+- Premium features currently include advanced exports/reporting paths
+
+## 9) Quality and validation
+
+Minimum regression checklist:
+
+1. First launch -> onboarding -> tabs
+2. Create trigger log and verify it appears in recent activity
+3. Start/end walk and verify summary is saved
+4. Progress screen reflects new data in charts/map
+5. Export/import/reset flows work from settings
+
+## 10) Known tradeoffs
+
+- Data is tied to device storage unless user exports backups
+- Reinstall/device change can cause data loss without export/import
+
+## 11) Near-term roadmap
+
+1. Add CSV export next to JSON export
+2. Add safer import validation and conflict diagnostics
+3. Add optional encrypted local backup file support
+4. Evaluate optional cloud sync as a separate future module

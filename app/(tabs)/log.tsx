@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { Button, Card, Chip, SegmentedButtons, TextInput } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
+import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
+import { create as createTriggerLog, listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositories/triggerLogRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 const TRIGGER_OPTIONS = [
   { id: 'Dog_OffLeash', label: 'Dog (Off-leash)', emoji: '🐕', color: '#EF4444' },
@@ -68,16 +70,10 @@ export default function LogScreen() {
 
   const fetchDogProfile = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const records = await pb.collection('dog_profiles').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-
-      if (records.items.length > 0) {
-        setDogId(records.items[0].id);
+      const ownerId = await getLocalOwnerId();
+      const profile = await getByOwnerId(ownerId);
+      if (profile) {
+        setDogId(profile.id);
       }
     } catch (error) {
       console.error('Error fetching dog profile:', error);
@@ -86,16 +82,12 @@ export default function LogScreen() {
 
   const fetchRecentLogs = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const records = await pb.collection('trigger_logs').getList(1, 5, {
-        filter: `owner_id = "${user.id}"`,
+      const ownerId = await getLocalOwnerId();
+      const records = await listTriggerLogsByOwner(ownerId, {
+        limit: 5,
         sort: '-logged_at',
-        requestKey: null,
       });
-
-      setRecentLogs(records.items as unknown as TriggerLog[]);
+      setRecentLogs(records as TriggerLog[]);
     } catch (error) {
       console.error('Error fetching recent logs:', error);
     }
@@ -117,17 +109,13 @@ export default function LogScreen() {
     triggerTapHaptic();
     setLoading(true);
     try {
-      const user = getCurrentUser();
-      if (!user) {
-        Alert.alert('Error', 'Not authenticated');
-        return;
-      }
+      const ownerId = await getLocalOwnerId();
 
-      await pb.collection('trigger_logs').create({
+      await createTriggerLog({
         dog_id: dogId,
-        owner_id: user.id,
+        owner_id: ownerId,
         trigger_type: selectedTrigger,
-        severity: severity,
+        severity,
         distance_meters: distance ? parseFloat(distance) : null,
         notes: notes.trim() || null,
         logged_at: new Date().toISOString(),

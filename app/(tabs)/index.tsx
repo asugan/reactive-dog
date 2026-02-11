@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, Surface } from 'react-native-paper';
+import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
+import { countByOwner, listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 // TODO: PostHog - import { usePostHog } from 'posthog-react-native';
 
 interface Walk {
@@ -45,16 +47,10 @@ export default function Dashboard() {
 
   const fetchDogProfile = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const records = await pb.collection('dog_profiles').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-
-      if (records.items.length > 0) {
-        setDogProfile(records.items[0] as unknown as DogProfile);
+      const ownerId = await getLocalOwnerId();
+      const profile = await getByOwnerId(ownerId);
+      if (profile) {
+        setDogProfile(profile as DogProfile);
       }
     } catch (error) {
       console.error('Error fetching dog profile:', error);
@@ -63,16 +59,12 @@ export default function Dashboard() {
 
   const fetchRecentWalks = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
-
-      const records = await pb.collection('walks').getList(1, 3, {
-        filter: `owner_id = "${user.id}"`,
+      const ownerId = await getLocalOwnerId();
+      const records = await listWalksByOwner(ownerId, {
+        limit: 3,
         sort: '-started_at',
-        requestKey: null,
       });
-
-      setRecentWalks(records.items as unknown as Walk[]);
+      setRecentWalks(records as Walk[]);
     } catch (error) {
       console.error('Error fetching walks:', error);
     }
@@ -80,25 +72,16 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
+      const ownerId = await getLocalOwnerId();
 
       // Get total walks count
-      const totalResult = await pb.collection('walks').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-      const totalCount = totalResult.totalItems;
+      const totalCount = await countByOwner(ownerId);
 
       // Get this week's walks
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-      const weekResult = await pb.collection('walks').getList(1, 1, {
-        filter: `owner_id = "${user.id}" && started_at >= "${oneWeekAgo.toISOString()}"`,
-        requestKey: null,
-      });
-      const weekCount = weekResult.totalItems;
+      const weekCount = await countByOwner(ownerId, oneWeekAgo.toISOString());
 
       setStats({
         totalWalks: totalCount || 0,
@@ -192,12 +175,12 @@ export default function Dashboard() {
 
           <Pressable
             style={({ pressed }) => [styles.quickActionButton, pressed && styles.quickActionPressed]}
-            onPress={() => router.push('/(tabs)/community')}
+            onPress={() => router.push('/(tabs)/settings')}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: '#D1FAE5' }]}>
-              <MaterialCommunityIcons name="message-text" size={24} color="#10B981" />
+            <View style={[styles.quickActionIcon, { backgroundColor: '#E0E7FF' }]}> 
+              <MaterialCommunityIcons name="cog-outline" size={24} color="#4F46E5" />
             </View>
-            <Text style={styles.quickActionLabel}>Community</Text>
+            <Text style={styles.quickActionLabel}>Settings</Text>
           </Pressable>
         </View>
 

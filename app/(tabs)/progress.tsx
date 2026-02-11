@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, ScrollView, Dimensions, Alert, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { AuthModel, RecordModel } from "pocketbase";
-import { pb, getCurrentUser } from '../../lib/pocketbase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import MapView, { Marker } from 'react-native-maps';
@@ -11,6 +9,10 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
 import { hasPremiumAccessFromRevenueCat } from '../../lib/billing/access';
+import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
+import { listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositories/triggerLogRepo';
+import { listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
+import { getLocalOwnerId } from '../../lib/localApp';
 
 const { width } = Dimensions.get('window');
 const ACCENT_COLOR = '#1D4ED8';
@@ -37,6 +39,15 @@ interface HeatmapDay {
   dateKey: string;
   count: number;
   averageSeverity: number;
+}
+
+interface ReportDogProfile {
+  name?: string;
+}
+
+interface ReportWalk {
+  ended_at: string | null;
+  success_rating: number | null;
 }
 
 const TRIGGER_COLORS: { [key: string]: string } = {
@@ -84,22 +95,20 @@ export default function ProgressScreen() {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const user = getCurrentUser();
-      if (!user) return;
+      const ownerId = await getLocalOwnerId();
 
       const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
-      const records = await pb.collection('trigger_logs').getFullList({
-        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
+      const records = await listTriggerLogsByOwner(ownerId, {
+        since: cutoffDate.toISOString(),
         sort: 'logged_at',
-        requestKey: null,
       });
 
-      setLogs(records as unknown as TriggerLog[]);
-      calculateStats(records as unknown as TriggerLog[]);
-      await fetchHeatmapLogs(user.id);
+      setLogs(records as TriggerLog[]);
+      calculateStats(records as TriggerLog[]);
+      await fetchHeatmapLogs(ownerId);
     } catch (error) {
       console.error('Error fetching logs:', error);
     }
@@ -110,10 +119,9 @@ export default function ProgressScreen() {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 41);
 
-      const records = await pb.collection('trigger_logs').getFullList({
-        filter: `owner_id = "${ownerId}" && logged_at >= "${cutoffDate.toISOString()}"`,
+      const records = await listTriggerLogsByOwner(ownerId, {
+        since: cutoffDate.toISOString(),
         sort: 'logged_at',
-        requestKey: null,
       });
 
       const byDay = new Map<string, { count: number; severitySum: number }>();
@@ -342,42 +350,32 @@ export default function ProgressScreen() {
   const generateReport = async () => {
     try {
       setExporting(true);
-      const user = getCurrentUser();
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to generate reports');
-        return;
-      }
+      const ownerId = await getLocalOwnerId();
 
       // Fetch dog profile
-      const dogResult = await pb.collection('dog_profiles').getList(1, 1, {
-        filter: `owner_id = "${user.id}"`,
-        requestKey: null,
-      });
-      const dogProfile = dogResult.items[0];
+      const dogProfile = await getByOwnerId(ownerId);
 
       // Fetch logs for report
       const daysBack = timeRange === '7days' ? 7 : timeRange === '30days' ? 30 : 90;
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
-      const logsResult = await pb.collection('trigger_logs').getFullList({
-        filter: `owner_id = "${user.id}" && logged_at >= "${cutoffDate.toISOString()}"`,
+      const logsResult = await listTriggerLogsByOwner(ownerId, {
+        since: cutoffDate.toISOString(),
         sort: '-logged_at',
-        requestKey: null,
       });
 
       // Fetch walks for report
-      const walksResult = await pb.collection('walks').getFullList({
-        filter: `owner_id = "${user.id}" && started_at >= "${cutoffDate.toISOString()}"`,
+      const walksResult = await listWalksByOwner(ownerId, {
+        since: cutoffDate.toISOString(),
         sort: '-started_at',
-        requestKey: null,
       });
 
       // Generate report HTML
       const html = generateReportHTML(
         dogProfile,
-        logsResult as unknown as TriggerLog[],
-        walksResult,
+        logsResult as TriggerLog[],
+        walksResult as ReportWalk[],
         timeRange
       );
 
@@ -406,9 +404,9 @@ export default function ProgressScreen() {
   };
 
   const generateReportHTML = (
-    dogProfile: AuthModel | null,
+    dogProfile: ReportDogProfile | null,
     logs: TriggerLog[],
-    walks: RecordModel[],
+    walks: ReportWalk[],
     timeRange: string
   ) => {
     const timeRangeLabel = timeRange === '7days' ? 'Last 7 Days' : timeRange === '30days' ? 'Last 30 Days' : 'Last 90 Days';

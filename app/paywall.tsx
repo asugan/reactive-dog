@@ -113,7 +113,7 @@ export default function PaywallScreen() {
         <View style={styles.benefitsWrap}>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
-            <Text style={styles.benefitText}>Community tools and expert Q&A sessions</Text>
+            <Text style={styles.benefitText}>Advanced trigger insights and deeper trend analysis</Text>
           </View>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
