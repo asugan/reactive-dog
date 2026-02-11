@@ -4,6 +4,7 @@ import { useSubscription } from './subscription';
 
 export const usePremiumGate = (source: string) => {
   const subscription = useSubscription();
+  const hasPremiumAccess = subscription.status === 'active' || subscription.status === 'trial';
 
   const openPaywall = useCallback(() => {
     router.push({
@@ -15,7 +16,7 @@ export const usePremiumGate = (source: string) => {
   }, [source]);
 
   const runWithPremium = useCallback((onAllowed: () => void, onUnknown?: () => void) => {
-    if (subscription.status === 'active') {
+    if (hasPremiumAccess) {
       onAllowed();
       return;
     }
@@ -28,11 +29,11 @@ export const usePremiumGate = (source: string) => {
     if (onUnknown) {
       onUnknown();
     }
-  }, [openPaywall, subscription.status]);
+  }, [hasPremiumAccess, openPaywall, subscription.status]);
 
   return {
     ...subscription,
-    isPremium: subscription.status === 'active',
+    isPremium: hasPremiumAccess,
     openPaywall,
     runWithPremium,
   };

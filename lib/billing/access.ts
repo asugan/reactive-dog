@@ -1,13 +1,44 @@
-import { getCustomerInfo, hasPremiumAccess, isRevenueCatReady } from './revenuecat';
+import type { CustomerInfo } from 'react-native-purchases';
+import { getCustomerInfo, getEntitlementId, hasPremiumAccess, isRevenueCatReady } from './revenuecat';
 import { logBillingError } from './telemetry';
 
-export type PremiumAccessStatus = 'active' | 'inactive' | 'unknown';
+export type PremiumAccessStatus = 'active' | 'trial' | 'inactive' | 'unknown';
 
 export interface PremiumAccessState {
   status: PremiumAccessStatus;
   checkedAt: string;
   errorMessage?: string;
 }
+
+const resolveEntitlementPeriodType = (customerInfo: CustomerInfo) => {
+  const entitlement = customerInfo.entitlements.active[getEntitlementId()] as
+    | { periodType?: string }
+    | undefined;
+
+  const periodType = entitlement?.periodType;
+  if (typeof periodType !== 'string') {
+    return null;
+  }
+
+  return periodType.toLowerCase();
+};
+
+export const resolvePremiumAccessStatus = (customerInfo: CustomerInfo | null): PremiumAccessStatus => {
+  if (!customerInfo) {
+    return 'unknown';
+  }
+
+  if (!hasPremiumAccess(customerInfo)) {
+    return 'inactive';
+  }
+
+  const periodType = resolveEntitlementPeriodType(customerInfo);
+  if (periodType === 'trial') {
+    return 'trial';
+  }
+
+  return 'active';
+};
 
 export const getPremiumAccessStateFromRevenueCat = async (): Promise<PremiumAccessState> => {
   const checkedAt = new Date().toISOString();
@@ -32,7 +63,7 @@ export const getPremiumAccessStateFromRevenueCat = async (): Promise<PremiumAcce
     }
 
     return {
-      status: hasPremiumAccess(customerInfo) ? 'active' : 'inactive',
+      status: resolvePremiumAccessStatus(customerInfo),
       checkedAt,
     };
   } catch (error) {

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
-import { addCustomerInfoListener, hasPremiumAccess } from './revenuecat';
-import { getPremiumAccessStateFromRevenueCat, type PremiumAccessStatus } from './access';
+import { addCustomerInfoListener } from './revenuecat';
+import { getPremiumAccessStateFromRevenueCat, resolvePremiumAccessStatus, type PremiumAccessStatus } from './access';
 import { logBillingError, logBillingInfo } from './telemetry';
 import { initializeLocalApp } from '../localApp';
 
@@ -62,7 +62,7 @@ export const SubscriptionProvider = ({ children }: PropsWithChildren) => {
 
     refresh().then(() => {
       unsubscribeCustomerInfo = addCustomerInfoListener((customerInfo) => {
-        const nextStatus = hasPremiumAccess(customerInfo) ? 'active' : 'inactive';
+        const nextStatus = resolvePremiumAccessStatus(customerInfo);
         setStatus(nextStatus);
         setError(null);
         setLastCheckedAt(new Date().toISOString());

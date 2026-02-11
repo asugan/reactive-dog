@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Animated, Easing, View, Text, StyleSheet, ScrollView, Alert, Pressable, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +8,12 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
 import { usePremiumGate } from '../../lib/billing/premiumGate';
+import {
+  getCurrentWeekKey,
+  getPremiumInsightMeterState,
+  unlockWeeklyPremiumInsightPreview,
+  type PremiumInsightMeterState,
+} from '../../lib/billing/premiumInsights';
 import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositories/triggerLogRepo';
@@ -47,6 +53,13 @@ interface ReportDogProfile {
 interface ReportWalk {
   ended_at: string | null;
   success_rating: number | null;
+}
+
+interface WeeklyCoachSummary {
+  trend: 'improving' | 'stable' | 'challenging';
+  headline: string;
+  supportingText: string;
+  actionText: string;
 }
 
 const TRIGGER_COLORS: { [key: string]: string } = {
@@ -93,6 +106,9 @@ export default function ProgressScreen() {
   const [exporting, setExporting] = useState(false);
   const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([]);
   const [showMap, setShowMap] = useState(false);
+  const [insightMeterState, setInsightMeterState] = useState<PremiumInsightMeterState | null>(null);
+  const [isWeeklyInsightUnlocked, setIsWeeklyInsightUnlocked] = useState(false);
+  const [isUnlockingInsight, setIsUnlockingInsight] = useState(false);
   const [mapRegion, setMapRegion] = useState({
     latitude: 39.9334,
     longitude: 32.8597,
@@ -107,6 +123,8 @@ export default function ProgressScreen() {
     refresh: refreshSubscription,
   } = usePremiumGate('progress-report-export');
   const entranceAnim = useRef(new Animated.Value(0)).current;
+  const currentWeekKey = useMemo(() => getCurrentWeekKey(), []);
+  const hasLoggedPreviewImpression = useRef(false);
   const isTablet = windowWidth >= 768;
   const contentHorizontalPadding = isTablet ? 28 : 24;
   const contentColumnWidth = Math.max(280, Math.min(windowWidth - contentHorizontalPadding * 2, 960));
@@ -184,6 +202,29 @@ export default function ProgressScreen() {
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  const refreshInsightMeter = useCallback(async () => {
+    try {
+      const meter = await getPremiumInsightMeterState();
+      setInsightMeterState(meter);
+      setIsWeeklyInsightUnlocked(meter.unlockedWeekKeys.includes(currentWeekKey));
+    } catch (error) {
+      console.error('Error loading premium insight meter:', error);
+    }
+  }, [currentWeekKey]);
+
+  useEffect(() => {
+    refreshInsightMeter();
+  }, [refreshInsightMeter]);
+
+  useEffect(() => {
+    if (isPremium) {
+      setIsWeeklyInsightUnlocked(true);
+      return;
+    }
+
+    setIsWeeklyInsightUnlocked(Boolean(insightMeterState?.unlockedWeekKeys.includes(currentWeekKey)));
+  }, [currentWeekKey, insightMeterState, isPremium]);
 
   useEffect(() => {
     Animated.timing(entranceAnim, {
@@ -353,6 +394,132 @@ export default function ProgressScreen() {
   for (let i = 0; i < heatmapDays.length; i += 7) {
     heatmapWeeks.push(heatmapDays.slice(i, i + 7));
   }
+
+  const weeklyCoachSummary = useMemo<WeeklyCoachSummary | null>(() => {
+    if (heatmapDays.length < 14) {
+      return null;
+    }
+
+    const latestDays = heatmapDays.slice(-14);
+    const previousWeek = latestDays.slice(0, 7);
+    const recentWeek = latestDays.slice(7);
+
+    const previousCount = previousWeek.reduce((total, day) => total + day.count, 0);
+    const recentCount = recentWeek.reduce((total, day) => total + day.count, 0);
+
+    const previousSeverityTotal = previousWeek.reduce((total, day) => total + (day.averageSeverity * day.count), 0);
+    const recentSeverityTotal = recentWeek.reduce((total, day) => total + (day.averageSeverity * day.count), 0);
+
+    const previousAvgSeverity = previousCount > 0 ? previousSeverityTotal / previousCount : 0;
+    const recentAvgSeverity = recentCount > 0 ? recentSeverityTotal / recentCount : 0;
+
+    const recentLogsByTrigger: Record<string, number> = {};
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+    logs.forEach((log) => {
+      if (new Date(log.logged_at) < fourteenDaysAgo) {
+        return;
+      }
+
+      recentLogsByTrigger[log.trigger_type] = (recentLogsByTrigger[log.trigger_type] ?? 0) + 1;
+    });
+
+    const focusTrigger = Object.entries(recentLogsByTrigger)
+      .sort((a, b) => b[1] - a[1])[0]?.[0];
+    const focusTriggerLabel = focusTrigger ? (TRIGGER_LABELS[focusTrigger] || focusTrigger) : 'your main trigger';
+
+    if (recentCount === 0) {
+      return {
+        trend: 'improving',
+        headline: 'Zero reactions logged this week.',
+        supportingText: 'This is a major win. Keep your current structure and distance strategy consistent.',
+        actionText: 'Repeat your easiest route 2 to 3 times this week to lock in progress.',
+      };
+    }
+
+    const countDelta = recentCount - previousCount;
+    const severityDelta = recentAvgSeverity - previousAvgSeverity;
+
+    if (countDelta <= 0 && severityDelta <= 0.15) {
+      return {
+        trend: 'improving',
+        headline: 'Reactivity trend is improving week over week.',
+        supportingText: `You logged ${recentCount} reactions this week (${Math.abs(countDelta)} fewer than last week).`,
+        actionText: `Keep building on this with controlled setups around ${focusTriggerLabel}.`,
+      };
+    }
+
+    if (countDelta >= 2 || severityDelta >= 0.45) {
+      return {
+        trend: 'challenging',
+        headline: 'This week looked more challenging than last week.',
+        supportingText: `Reaction volume and intensity both climbed. The biggest pressure point appears around ${focusTriggerLabel}.`,
+        actionText: `For the next 3 walks, increase distance early and end sessions after the first escalation cue.`,
+      };
+    }
+
+    return {
+      trend: 'stable',
+      headline: 'Progress is stable, but not improving yet.',
+      supportingText: `You are holding around ${recentCount} reactions per week with similar intensity to last week.`,
+      actionText: `Pick one focus trigger (${focusTriggerLabel}) and track distance on every encounter this week.`,
+    };
+  }, [heatmapDays, logs]);
+
+  const hasLockedWeeklyInsight = !isPremium && !isWeeklyInsightUnlocked;
+  const previewRemaining = insightMeterState?.remaining ?? 0;
+  const isInsightMeterLoading = !insightMeterState && !isPremium;
+
+  useEffect(() => {
+    if (!weeklyCoachSummary || !insightMeterState || isPremium || isWeeklyInsightUnlocked || hasLoggedPreviewImpression.current) {
+      return;
+    }
+
+    hasLoggedPreviewImpression.current = true;
+    logBillingInfo('insight_preview_shown', {
+      source: 'progress-weekly-coach',
+      remaining: previewRemaining,
+    });
+  }, [insightMeterState, isPremium, isWeeklyInsightUnlocked, previewRemaining, weeklyCoachSummary]);
+
+  const handleWeeklyInsightUnlock = async () => {
+    if (isPremium || isWeeklyInsightUnlocked) {
+      return;
+    }
+
+    try {
+      setIsUnlockingInsight(true);
+
+      const unlockResult = await unlockWeeklyPremiumInsightPreview(currentWeekKey);
+      setInsightMeterState(unlockResult);
+      setIsWeeklyInsightUnlocked(unlockResult.unlocked);
+
+      if (unlockResult.unlocked) {
+        logBillingInfo('insight_preview_unlocked', {
+          source: 'progress-weekly-coach',
+          weekKey: currentWeekKey,
+          consumed: unlockResult.consumed,
+          remaining: unlockResult.remaining,
+        });
+        return;
+      }
+
+      logBillingInfo('insight_preview_limit_reached', {
+        source: 'progress-weekly-coach',
+        weekKey: currentWeekKey,
+      });
+      openPaywall();
+    } catch (error) {
+      logBillingError('insight_preview_unlock_failed', error, {
+        source: 'progress-weekly-coach',
+        weekKey: currentWeekKey,
+      });
+      Alert.alert('Preview unavailable', 'Could not unlock this summary right now. Please try again.');
+    } finally {
+      setIsUnlockingInsight(false);
+    }
+  };
 
   const generateReport = async () => {
     try {
@@ -627,7 +794,7 @@ export default function ProgressScreen() {
           {subscriptionStatus === 'inactive' ? (
             <Pressable style={styles.premiumHintRow} onPress={openPaywall}>
               <MaterialCommunityIcons name="lock-outline" size={15} color="#1E3A8A" />
-              <Text style={styles.premiumHintText}>PDF export is a premium feature. Tap to unlock.</Text>
+              <Text style={styles.premiumHintText}>PDF export and weekly coach insights are premium. Tap to unlock.</Text>
             </Pressable>
           ) : null}
           {subscriptionStatus === 'unknown' && !isSubscriptionLoading ? (
@@ -724,6 +891,73 @@ export default function ProgressScreen() {
             </View>
           </View>
         )}
+
+        {weeklyCoachSummary ? (
+          <View style={[styles.coachCard, hasLockedWeeklyInsight && styles.coachCardLocked]}>
+            <View style={styles.coachHeaderRow}>
+              <View style={styles.coachIconWrap}>
+                <MaterialCommunityIcons name="account-heart-outline" size={20} color="#1D4ED8" />
+              </View>
+              <View style={styles.coachHeaderTextWrap}>
+                <Text style={styles.coachTitle}>Weekly Coach Summary</Text>
+                <Text style={styles.coachSubtitle}>
+                  {isPremium
+                    ? 'Premium insight active'
+                    : isInsightMeterLoading
+                      ? 'Checking free previews...'
+                      : hasLockedWeeklyInsight
+                      ? `${previewRemaining} free preview${previewRemaining === 1 ? '' : 's'} left this month`
+                      : 'Preview unlocked for this week'}
+                </Text>
+              </View>
+            </View>
+
+            {hasLockedWeeklyInsight ? (
+              <>
+                <Text style={styles.coachPreviewHeadline}>{weeklyCoachSummary.headline}</Text>
+                <Text style={styles.coachLockedText}>Unlock this week&apos;s action plan and deeper trend interpretation.</Text>
+                <Button
+                  mode="contained"
+                  buttonColor={previewRemaining > 0 ? '#1D4ED8' : '#0F766E'}
+                  style={styles.coachUnlockButton}
+                  loading={isUnlockingInsight || isInsightMeterLoading}
+                  disabled={isUnlockingInsight || isInsightMeterLoading}
+                  onPress={() => {
+                    if (isInsightMeterLoading) {
+                      return;
+                    }
+
+                    if (previewRemaining > 0) {
+                      handleWeeklyInsightUnlock();
+                      return;
+                    }
+
+                    openPaywall();
+                  }}
+                >
+                  {isInsightMeterLoading
+                    ? 'Checking...'
+                    : previewRemaining > 0
+                      ? `Unlock weekly plan (${previewRemaining} left)`
+                      : 'View Premium Plans'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text style={styles.coachHeadline}>{weeklyCoachSummary.headline}</Text>
+                <Text style={styles.coachSupportingText}>{weeklyCoachSummary.supportingText}</Text>
+                <View style={styles.coachActionRow}>
+                  <MaterialCommunityIcons
+                    name={weeklyCoachSummary.trend === 'challenging' ? 'flag-outline' : 'run-fast'}
+                    size={18}
+                    color={weeklyCoachSummary.trend === 'challenging' ? '#9A3412' : '#0F766E'}
+                  />
+                  <Text style={styles.coachActionText}>{weeklyCoachSummary.actionText}</Text>
+                </View>
+              </>
+            )}
+          </View>
+        ) : null}
 
         {/* Line Chart - Reactions Over Time */}
         <View style={styles.chartSection}>
@@ -1042,6 +1276,81 @@ const styles = StyleSheet.create({
   insightText: {
     fontSize: 14,
     color: '#92400E',
+  },
+  coachCard: {
+    backgroundColor: '#EEF4FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    gap: 10,
+  },
+  coachCardLocked: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
+  coachHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  coachIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachHeaderTextWrap: {
+    flex: 1,
+  },
+  coachTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  coachSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#475569',
+  },
+  coachPreviewHeadline: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  coachLockedText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#475569',
+  },
+  coachUnlockButton: {
+    marginTop: 2,
+  },
+  coachHeadline: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  coachSupportingText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#334155',
+  },
+  coachActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingTop: 2,
+  },
+  coachActionText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+    color: '#0F172A',
   },
   chartSection: {
     marginBottom: 32,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -15,6 +15,7 @@ export default function PaywallScreen() {
   const [restoring, setRestoring] = useState(false);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const hasLoggedPaywallViewed = useRef(false);
   const { refresh: refreshSubscription } = useSubscription();
   const isMobilePlatform = Platform.OS === 'ios' || Platform.OS === 'android';
 
@@ -78,6 +79,35 @@ export default function PaywallScreen() {
     return [...packages].sort((a, b) => getRank(a) - getRank(b));
   }, [packages]);
 
+  const annualPackage = useMemo(() => {
+    return rankedPackages.find((item) => item.packageType === 'ANNUAL') ?? null;
+  }, [rankedPackages]);
+
+  const monthlyPackage = useMemo(() => {
+    return rankedPackages.find((item) => item.packageType === 'MONTHLY') ?? null;
+  }, [rankedPackages]);
+
+  const annualSavingsPercent = useMemo(() => {
+    if (!annualPackage || !monthlyPackage) {
+      return null;
+    }
+
+    const annualPrice = Number(annualPackage.product.price ?? 0);
+    const monthlyPrice = Number(monthlyPackage.product.price ?? 0);
+    if (annualPrice <= 0 || monthlyPrice <= 0) {
+      return null;
+    }
+
+    const yearlyMonthlyCost = monthlyPrice * 12;
+    if (yearlyMonthlyCost <= annualPrice) {
+      return null;
+    }
+
+    const savingsRatio = 1 - annualPrice / yearlyMonthlyCost;
+    const savingsPercent = Math.round(savingsRatio * 100);
+    return savingsPercent >= 5 ? savingsPercent : null;
+  }, [annualPackage, monthlyPackage]);
+
   useEffect(() => {
     const loadOfferings = async () => {
       if (!isMobilePlatform) {
@@ -101,9 +131,28 @@ export default function PaywallScreen() {
     loadOfferings();
   }, [isMobilePlatform]);
 
+  useEffect(() => {
+    if (loading || hasLoggedPaywallViewed.current) {
+      return;
+    }
+
+    hasLoggedPaywallViewed.current = true;
+    logBillingInfo('paywall_viewed', {
+      source: sourceLabel,
+      packageCount: rankedPackages.length,
+      isMobilePlatform,
+    });
+  }, [isMobilePlatform, loading, rankedPackages.length, sourceLabel]);
+
   const handlePurchase = async (selectedPackage: PurchasesPackage) => {
     try {
       setPurchasingId(selectedPackage.identifier);
+      logBillingInfo('paywall_plan_selected', {
+        packageId: selectedPackage.identifier,
+        packageType: selectedPackage.packageType,
+        price: selectedPackage.product.price,
+      });
+
       const result = await purchasePackage(selectedPackage);
       const unlocked = hasPremiumAccess(result.customerInfo);
       await refreshSubscription();
@@ -168,6 +217,11 @@ export default function PaywallScreen() {
   };
 
   const handleMaybeLater = () => {
+    logBillingInfo('paywall_dismissed', {
+      source: sourceLabel,
+      hadPackages: rankedPackages.length > 0,
+    });
+
     if (router.canGoBack()) {
       router.back();
       return;
@@ -188,17 +242,29 @@ export default function PaywallScreen() {
         <View style={styles.headerIconWrap}>
           <MaterialCommunityIcons name="dog-service" size={30} color="#1D4ED8" />
         </View>
-        <Text style={styles.title}>Go Premium</Text>
-        <Text style={styles.subtitle}>Unlock {sourceLabel} and advanced tools for safer, calmer walks.</Text>
+        <Text style={styles.title}>Calmer Walks Premium</Text>
+        <Text style={styles.subtitle}>Unlock {sourceLabel} with weekly coaching insights and long-range progress tools.</Text>
 
         <View style={styles.benefitsWrap}>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
-            <Text style={styles.benefitText}>Export polished PDF training reports from Progress</Text>
+            <Text style={styles.benefitText}>Get a weekly coach summary with one action to try next walk</Text>
           </View>
           <View style={styles.benefitRow}>
             <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
-            <Text style={styles.benefitText}>Restore and manage your premium subscription any time</Text>
+            <Text style={styles.benefitText}>Track longer trends to spot what really improves reactivity</Text>
+          </View>
+          <View style={styles.benefitRow}>
+            <MaterialCommunityIcons name="check-circle" size={18} color="#0F766E" />
+            <Text style={styles.benefitText}>Share polished PDF progress reports with trainers or family</Text>
+          </View>
+        </View>
+
+        <View style={styles.trialBanner}>
+          <MaterialCommunityIcons name="timer-sand" size={20} color="#1D4ED8" />
+          <View style={styles.trialBannerTextWrap}>
+            <Text style={styles.trialBannerTitle}>Start risk-free on eligible plans</Text>
+            <Text style={styles.trialBannerBody}>App Store and Google Play can offer free trial periods before billing starts.</Text>
           </View>
         </View>
 
@@ -222,16 +288,20 @@ export default function PaywallScreen() {
             </Card.Content>
           </Card>
         ) : (
-          <View style={styles.packagesWrap}>
-            {rankedPackages.map((item, index) => {
-              const isRecommended = item.packageType === 'ANNUAL' || index === 0;
+            <View style={styles.packagesWrap}>
+              {rankedPackages.map((item, index) => {
+              const isAnnual = item.packageType === 'ANNUAL';
+              const isRecommended = isAnnual || index === 0;
+              const recommendedLabel = isAnnual && annualSavingsPercent
+                ? `Best value - Save ${annualSavingsPercent}%`
+                : 'Best value';
 
               return (
               <Card key={item.identifier} style={[styles.packageCard, isRecommended && styles.packageCardRecommended]}>
                 <Card.Content>
                   {isRecommended ? (
                     <View style={styles.recommendedBadge}>
-                      <Text style={styles.recommendedBadgeText}>Best value</Text>
+                      <Text style={styles.recommendedBadgeText}>{recommendedLabel}</Text>
                     </View>
                   ) : null}
                   <Text style={styles.packageTitle}>{item.product.title}</Text>
@@ -239,6 +309,9 @@ export default function PaywallScreen() {
                   <Text style={styles.packagePrice}>{item.product.priceString}</Text>
                   {item.product.pricePerMonthString ? (
                     <Text style={styles.packageSubPrice}>{item.product.pricePerMonthString} per month</Text>
+                  ) : null}
+                  {isAnnual && annualSavingsPercent ? (
+                    <Text style={styles.packageSavings}>Roughly {annualSavingsPercent}% cheaper than paying monthly for a year.</Text>
                   ) : null}
                   <Button
                     mode="contained"
@@ -248,7 +321,7 @@ export default function PaywallScreen() {
                     disabled={Boolean(purchasingId)}
                     onPress={() => handlePurchase(item)}
                   >
-                    Continue
+                    Start plan
                   </Button>
                 </Card.Content>
               </Card>
@@ -260,6 +333,7 @@ export default function PaywallScreen() {
           <Button mode="outlined" onPress={handleRestore} loading={restoring} disabled={restoring || loading || !isMobilePlatform}>
             Restore Purchases
           </Button>
+          <Text style={styles.billingNote}>Subscriptions renew automatically unless canceled in your store account settings.</Text>
         </View>
 
         <View style={styles.legalActions}>
@@ -326,6 +400,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#155E75',
     fontWeight: '600',
+  },
+  trialBanner: {
+    marginBottom: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EEF4FF',
+    padding: 12,
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  trialBannerTextWrap: {
+    flex: 1,
+  },
+  trialBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  trialBannerBody: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 18,
   },
   loadingWrap: {
     alignItems: 'center',
@@ -403,12 +502,23 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '600',
   },
+  packageSavings: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#0F766E',
+    fontWeight: '600',
+  },
   purchaseButton: {
     marginTop: 12,
   },
   footerActions: {
     marginTop: 18,
     gap: 6,
+  },
+  billingNote: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 17,
   },
   legalActions: {
     marginTop: 8,

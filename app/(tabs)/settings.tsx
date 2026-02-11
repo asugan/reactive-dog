@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Button, Card, Divider, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { clearAllLocalData, exportLocalData, importLocalData } from '../../lib/data/repositories/settingsRepo';
+import { getPremiumInsightMeterState, MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT } from '../../lib/billing/premiumInsights';
 import { getEntitlementId, hasPremiumAccess, restorePurchases } from '../../lib/billing/revenuecat';
 import { useSubscription } from '../../lib/billing/subscription';
 import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
@@ -20,13 +21,15 @@ export default function SettingsScreen() {
     error: subscriptionError,
     refresh: refreshSubscription,
   } = useSubscription();
-  const isPremium = subscriptionStatus === 'active';
+  const isPremium = subscriptionStatus === 'active' || subscriptionStatus === 'trial';
 
   const [exportingData, setExportingData] = useState(false);
   const [showImportEditor, setShowImportEditor] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importingData, setImportingData] = useState(false);
   const [lastExportPreview, setLastExportPreview] = useState<string | null>(null);
+  const [insightPreviewRemaining, setInsightPreviewRemaining] = useState(MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT);
+  const [insightPreviewUsed, setInsightPreviewUsed] = useState(0);
 
   const refreshOwnerId = useCallback(async () => {
     const localOwnerId = await getLocalOwnerId();
@@ -43,6 +46,31 @@ export default function SettingsScreen() {
     }
   }, [refreshSubscription]);
 
+  const refreshInsightPreviewMeter = useCallback(async () => {
+    try {
+      const meter = await getPremiumInsightMeterState();
+      setInsightPreviewRemaining(meter.remaining);
+      setInsightPreviewUsed(meter.used);
+    } catch (error) {
+      console.error('Failed to load insight preview meter', error);
+    }
+  }, []);
+
+  const openPaywallFromSettings = useCallback((source: string) => {
+    logBillingInfo('settings_paywall_opened', {
+      source,
+      subscriptionStatus,
+      insightPreviewRemaining,
+    });
+
+    router.push({
+      pathname: '/paywall',
+      params: {
+        source,
+      },
+    });
+  }, [insightPreviewRemaining, subscriptionStatus]);
+
   useEffect(() => {
     refreshOwnerId().catch((error) => {
       console.error('Failed to load local owner id', error);
@@ -50,7 +78,10 @@ export default function SettingsScreen() {
     loadSubscriptionStatus().catch((error) => {
       logBillingError('settings_initial_subscription_load_failed', error);
     });
-  }, [loadSubscriptionStatus, refreshOwnerId]);
+    refreshInsightPreviewMeter().catch((error) => {
+      console.error('Failed to load insight preview state', error);
+    });
+  }, [loadSubscriptionStatus, refreshInsightPreviewMeter, refreshOwnerId]);
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
@@ -110,6 +141,7 @@ export default function SettingsScreen() {
       const parsed = JSON.parse(importJson);
       await importLocalData(parsed);
       await refreshOwnerId();
+      await refreshInsightPreviewMeter();
 
       setImportJson('');
       setShowImportEditor(false);
@@ -244,10 +276,21 @@ export default function SettingsScreen() {
                 {isLoadingSubscription
                   ? 'Checking...'
                   : isPremium
-                    ? 'Premium active'
+                    ? subscriptionStatus === 'trial'
+                      ? 'Trial active'
+                      : 'Premium active'
                     : subscriptionStatus === 'unknown'
                       ? 'Status unavailable'
                       : 'Free plan'}
+              </Text>
+            </View>
+            <Divider style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Free premium insight previews</Text>
+              <Text style={styles.rowValue}>
+                {isPremium
+                  ? 'Not needed while premium is active'
+                  : `${insightPreviewRemaining} of ${MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT} left this month`}
               </Text>
             </View>
             {restoreError || subscriptionError ? <Text style={styles.subscriptionError}>{restoreError || subscriptionError}</Text> : null}
@@ -267,16 +310,28 @@ export default function SettingsScreen() {
               </Button>
             </View>
 
-            {subscriptionStatus !== 'active' && !isLoadingSubscription ? (
-              <Button
-                mode="contained"
-                buttonColor="#0F766E"
-                textColor="#FFFFFF"
-                style={styles.premiumPlansButton}
-                onPress={() => router.push('/paywall')}
-              >
-                View Premium Plans
-              </Button>
+            {!isPremium && !isLoadingSubscription ? (
+              <View style={styles.winbackCard}>
+                <Text style={styles.winbackTitle}>Try Premium for calmer walks</Text>
+                <Text style={styles.winbackText}>
+                  Unlock weekly coach summaries, long-range trend analysis, and PDF reports to share with trainers.
+                </Text>
+                <Text style={styles.winbackMeta}>You have used {insightPreviewUsed} of {MONTHLY_PREMIUM_INSIGHT_PREVIEW_LIMIT} free insight previews this month.</Text>
+                <View style={styles.winbackActions}>
+                  <Button
+                    mode="contained"
+                    buttonColor="#0F766E"
+                    textColor="#FFFFFF"
+                    style={styles.premiumPlansButton}
+                    onPress={() => openPaywallFromSettings('settings-trial-cta')}
+                  >
+                    Start trial
+                  </Button>
+                  <Button mode="outlined" style={styles.premiumPlansButton} onPress={() => openPaywallFromSettings('settings-annual-cta')}>
+                    See annual plan
+                  </Button>
+                </View>
+              </View>
             ) : null}
           </Card.Content>
         </Card>
@@ -421,7 +476,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#B45309',
   },
-  premiumPlansButton: {
+  winbackCard: {
     marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    padding: 12,
+  },
+  winbackTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  winbackText: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  winbackMeta: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#475569',
+  },
+  winbackActions: {
+    marginTop: 10,
+    gap: 8,
+  },
+  premiumPlansButton: {
+    marginTop: 0,
   },
 });
