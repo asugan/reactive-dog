@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { update as updateWalk } from '../../lib/data/repositories/walkRepo';
+import { listByWalkId } from '../../lib/data/repositories/walkPointRepo';
+import { OpenStreetMapView } from '../../components/OpenStreetMapView';
 
 const SUCCESS_LABELS: { [key: number]: string } = {
   1: 'Very challenging',
@@ -20,12 +22,40 @@ const TECHNIQUE_USED_OPTIONS = [
   { id: 'Other', label: 'Other/Combination', icon: 'dots-horizontal' },
 ];
 
+interface RoutePoint {
+  latitude: number;
+  longitude: number;
+}
+
 export default function WalkSummaryScreen() {
   const { walkId, duration, logCount } = useLocalSearchParams();
+  const safeWalkId = Array.isArray(walkId) ? walkId[0] : walkId;
   const [successRating, setSuccessRating] = useState(3);
   const [techniqueUsed, setTechniqueUsed] = useState<string>('U_Turn');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [routePoints, setRoutePoints] = useState<RoutePoint[]>([]);
+
+  useEffect(() => {
+    const loadRoute = async () => {
+      if (!safeWalkId) {
+        return;
+      }
+
+      try {
+        const points = await listByWalkId(safeWalkId, { sort: 'captured_at' });
+        const coordinates = points.map((point) => ({
+          latitude: point.latitude,
+          longitude: point.longitude,
+        }));
+        setRoutePoints(coordinates);
+      } catch (error) {
+        console.error('Error loading walk route preview:', error);
+      }
+    };
+
+    loadRoute();
+  }, [safeWalkId]);
 
   const formatDuration = (seconds: string) => {
     const secs = parseInt(seconds);
@@ -38,10 +68,15 @@ export default function WalkSummaryScreen() {
   };
 
   const handleSave = async () => {
+    if (!safeWalkId) {
+      Alert.alert('Error', 'Walk session ID missing.');
+      return;
+    }
+
     setLoading(true);
     try {
       // Update walk with summary data
-      await updateWalk(walkId as string, {
+      await updateWalk(safeWalkId, {
         success_rating: successRating,
         technique_used: techniqueUsed,
         notes: notes.trim() || null,
@@ -100,6 +135,41 @@ export default function WalkSummaryScreen() {
             <Text style={styles.statValue}>{logCount}</Text>
             <Text style={styles.statLabel}>Triggers Logged</Text>
           </View>
+        </View>
+
+        {/* Route Preview */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Route Snapshot</Text>
+          {routePoints.length > 1 ? (
+            <View style={styles.routeMapFrame}>
+              <OpenStreetMapView
+                id={`summary-${safeWalkId ?? 'walk'}`}
+                style={styles.routeMap}
+                routeLines={[routePoints]}
+                markers={[
+                  {
+                    id: 'start',
+                    coordinate: routePoints[0],
+                    color: '#22C55E',
+                    size: 12,
+                  },
+                  {
+                    id: 'end',
+                    coordinate: routePoints[routePoints.length - 1],
+                    color: '#2563EB',
+                    size: 12,
+                  },
+                ]}
+                interactive={false}
+                fitToElements
+              />
+            </View>
+          ) : (
+            <View style={styles.routeEmptyCard}>
+              <MaterialCommunityIcons name="map-marker-path" size={20} color="#64748B" />
+              <Text style={styles.routeEmptyText}>Not enough route data for preview yet.</Text>
+            </View>
+          )}
         </View>
 
         {/* Success Rating */}
@@ -310,6 +380,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     marginBottom: 16,
+  },
+  routeMapFrame: {
+    height: 190,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    overflow: 'hidden',
+  },
+  routeMap: {
+    flex: 1,
+  },
+  routeEmptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 8,
+  },
+  routeEmptyText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#64748B',
   },
   ratingContainer: {
     flexDirection: 'row',

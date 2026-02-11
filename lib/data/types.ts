@@ -41,6 +41,16 @@ export interface WalkRecord {
   updated_at: string;
 }
 
+export interface WalkPoint {
+  id: string;
+  walk_id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  captured_at: string;
+  created_at: string;
+}
+
 export interface LocalExportPayload {
   version: number;
   exported_at: string;
@@ -48,4 +58,5 @@ export interface LocalExportPayload {
   dog_profiles: DogProfile[];
   trigger_logs: TriggerLog[];
   walks: WalkRecord[];
+  walk_points: WalkPoint[];
 }

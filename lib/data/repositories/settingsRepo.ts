@@ -1,6 +1,6 @@
 import { getDatabase } from '../database';
 import { generateId } from '../id';
-import type { DogProfile, LocalExportPayload, TriggerLog, WalkRecord } from '../types';
+import type { DogProfile, LocalExportPayload, TriggerLog, WalkPoint, WalkRecord } from '../types';
 
 const LOCAL_OWNER_ID_KEY = 'local_owner_id';
 const ONBOARDING_COMPLETE_KEY = 'onboarding_complete';
@@ -53,10 +53,21 @@ interface DbWalkRow {
   updated_at: string;
 }
 
+interface DbWalkPointRow {
+  id: string;
+  walk_id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  captured_at: string;
+  created_at: string;
+}
+
 interface ParsedImportPayload {
   dog_profiles: Partial<DogProfile>[];
   trigger_logs: Partial<TriggerLog>[];
   walks: Partial<WalkRecord>[];
+  walk_points: Partial<WalkPoint>[];
   app_settings: Record<string, unknown>;
 }
 
@@ -116,6 +127,18 @@ const mapWalkRow = (row: DbWalkRow): WalkRecord => {
     notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+};
+
+const mapWalkPointRow = (row: DbWalkPointRow): WalkPoint => {
+  return {
+    id: row.id,
+    walk_id: row.walk_id,
+    latitude: Number(row.latitude) || 0,
+    longitude: Number(row.longitude) || 0,
+    accuracy: row.accuracy === null ? null : Number(row.accuracy),
+    captured_at: row.captured_at,
+    created_at: row.created_at,
   };
 };
 
@@ -181,6 +204,7 @@ export const clearAllLocalData = async () => {
   await db.execAsync('BEGIN IMMEDIATE TRANSACTION');
   try {
     await db.runAsync('DELETE FROM trigger_logs');
+    await db.runAsync('DELETE FROM walk_points');
     await db.runAsync('DELETE FROM walks');
     await db.runAsync('DELETE FROM dog_profiles');
     await db.runAsync('DELETE FROM app_settings');
@@ -211,6 +235,7 @@ export const exportLocalData = async (): Promise<LocalExportPayload> => {
   const dogRows = await db.getAllAsync<DbDogProfileRow>('SELECT * FROM dog_profiles ORDER BY created_at DESC');
   const logRows = await db.getAllAsync<DbTriggerLogRow>('SELECT * FROM trigger_logs ORDER BY logged_at DESC');
   const walkRows = await db.getAllAsync<DbWalkRow>('SELECT * FROM walks ORDER BY started_at DESC');
+  const walkPointRows = await db.getAllAsync<DbWalkPointRow>('SELECT * FROM walk_points ORDER BY captured_at ASC');
 
   const appSettings = (settingsRows as DbSettingRow[]).reduce<Record<string, string>>((accumulator: Record<string, string>, row: DbSettingRow) => {
     accumulator[row.key] = row.value;
@@ -218,12 +243,13 @@ export const exportLocalData = async (): Promise<LocalExportPayload> => {
   }, {});
 
   return {
-    version: 1,
+    version: 2,
     exported_at: new Date().toISOString(),
     app_settings: appSettings,
     dog_profiles: dogRows.map(mapDogProfileRow),
     trigger_logs: logRows.map(mapTriggerLogRow),
     walks: walkRows.map(mapWalkRow),
+    walk_points: walkPointRows.map(mapWalkPointRow),
   };
 };
 
@@ -245,6 +271,7 @@ const parsePayload = (value: unknown): ParsedImportPayload => {
     dog_profiles: payload.dog_profiles as Partial<DogProfile>[],
     trigger_logs: payload.trigger_logs as Partial<TriggerLog>[],
     walks: payload.walks as Partial<WalkRecord>[],
+    walk_points: Array.isArray(payload.walk_points) ? payload.walk_points as Partial<WalkPoint>[] : [],
     app_settings: payload.app_settings as Record<string, unknown>,
   };
 };
@@ -272,6 +299,7 @@ export const importLocalData = async (value: unknown) => {
 
   try {
     await db.runAsync('DELETE FROM trigger_logs');
+    await db.runAsync('DELETE FROM walk_points');
     await db.runAsync('DELETE FROM walks');
     await db.runAsync('DELETE FROM dog_profiles');
     await db.runAsync('DELETE FROM app_settings');
@@ -419,6 +447,36 @@ export const importLocalData = async (value: unknown) => {
           resolveNullableString(walk.notes),
           createdAt,
           updatedAt,
+        ]
+      );
+    }
+
+    for (const rawWalkPoint of payload.walk_points) {
+      const point = rawWalkPoint;
+      const pointId = resolveString(point.id, generateId('point'));
+      const createdAt = resolveString(point.created_at, now);
+      const capturedAt = resolveString(point.captured_at, createdAt);
+
+      await db.runAsync(
+        `
+          INSERT INTO walk_points (
+            id,
+            walk_id,
+            latitude,
+            longitude,
+            accuracy,
+            captured_at,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          pointId,
+          resolveString(point.walk_id),
+          resolveNumber(point.latitude, 0),
+          resolveNumber(point.longitude, 0),
+          typeof point.accuracy === 'number' ? point.accuracy : null,
+          capturedAt,
+          createdAt,
         ]
       );
     }

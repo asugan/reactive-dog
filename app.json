@@ -59,6 +59,7 @@
         }
       ],
       "expo-router",
+      "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",
         {
@@ -67,8 +68,7 @@
           "resizeMode": "contain",
           "backgroundColor": "#D3DFF1"
         }
-      ],
-      "react-native-purchases"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

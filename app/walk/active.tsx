@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -7,6 +7,8 @@ import * as Location from 'expo-location';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { create as createTriggerLog } from '../../lib/data/repositories/triggerLogRepo';
 import { update as updateWalk } from '../../lib/data/repositories/walkRepo';
+import { createMany as createWalkPoints, type CreateWalkPointInput } from '../../lib/data/repositories/walkPointRepo';
+import { OpenStreetMapView, type MapMarker } from '../../components/OpenStreetMapView';
 import { getLocalOwnerId } from '../../lib/localApp';
 import { cancelReminderById, scheduleActiveWalkCheckInReminder } from '../../lib/notifications/notificationService';
 
@@ -24,6 +26,40 @@ interface LocationData {
   longitude: number;
 }
 
+interface QuickLogMapMarker {
+  id: string;
+  triggerType: string;
+  severity: number;
+  coordinate: LocationData;
+}
+
+const ROUTE_RECORDING_MIN_DISTANCE_METERS = 8;
+const ROUTE_PERSIST_INTERVAL_MS = 12000;
+const MAX_IN_MEMORY_ROUTE_POINTS = 800;
+const LAST_KNOWN_LOCATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const LAST_KNOWN_LOCATION_REQUIRED_ACCURACY_METERS = 2500;
+const DEV_TEST_LOCATION: LocationData = {
+  latitude: 39.9334,
+  longitude: 32.8597,
+};
+
+const getDistanceMeters = (from: LocationData, to: LocationData) => {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+
+  const dLat = toRadians(to.latitude - from.latitude);
+  const dLng = toRadians(to.longitude - from.longitude);
+  const lat1 = toRadians(from.latitude);
+  const lat2 = toRadians(to.latitude);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadiusMeters * c;
+};
+
 const getSingleParam = (value: string | string[] | undefined) => {
   if (Array.isArray(value)) {
     return value[0];
@@ -34,15 +70,22 @@ const getSingleParam = (value: string | string[] | undefined) => {
 
 export default function ActiveWalkScreen() {
   const { walkId, distanceThreshold, technique } = useLocalSearchParams();
+  const walkIdParam = getSingleParam(walkId);
   const distanceThresholdParam = getSingleParam(distanceThreshold);
   const distanceThresholdValue = Number(distanceThresholdParam);
   const safeDistanceThreshold = Number.isFinite(distanceThresholdValue) ? distanceThresholdValue : 15;
   const techniqueParam = getSingleParam(technique);
+  const safeWalkId = walkIdParam ?? null;
   const [dogId, setDogId] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [duration, setDuration] = useState(0);
   const [location, setLocation] = useState<LocationData | null>(null);
   const [logCount, setLogCount] = useState(0);
+  const [showLiveMap, setShowLiveMap] = useState(true);
+  const [autoCenterMap, setAutoCenterMap] = useState(true);
+  const [routePoints, setRoutePoints] = useState<LocationData[]>([]);
+  const [quickLogMarkers, setQuickLogMarkers] = useState<QuickLogMapMarker[]>([]);
+  const [showLocationHelp, setShowLocationHelp] = useState(false);
   const [showQuickLog, setShowQuickLog] = useState(false);
   const [selectedTrigger, setSelectedTrigger] = useState<string | null>(null);
   const [selectedSeverity, setSelectedSeverity] = useState(3);
@@ -51,6 +94,13 @@ export default function ActiveWalkScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const reminderNotificationIdRef = useRef<string | null>(null);
+  const isActiveRef = useRef(true);
+  const latestLocationRef = useRef<LocationData | null>(null);
+  const isFlushingRoutePointsRef = useRef(false);
+  const routeFlushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const locationRecoveryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingWalkPointBufferRef = useRef<CreateWalkPointInput[]>([]);
+  const lastRecordedPointRef = useRef<LocationData | null>(null);
 
   // Pulse animation for active indicator
   useEffect(() => {
@@ -91,6 +141,78 @@ export default function ActiveWalkScreen() {
     }
   };
 
+  const flushPendingWalkPoints = useCallback(async () => {
+    if (!safeWalkId || isFlushingRoutePointsRef.current || pendingWalkPointBufferRef.current.length === 0) {
+      return;
+    }
+
+    isFlushingRoutePointsRef.current = true;
+    const batch = pendingWalkPointBufferRef.current;
+    pendingWalkPointBufferRef.current = [];
+
+    try {
+      await createWalkPoints(batch);
+    } catch (error) {
+      console.error('Error saving walk route points:', error);
+      pendingWalkPointBufferRef.current = [...batch, ...pendingWalkPointBufferRef.current];
+    } finally {
+      isFlushingRoutePointsRef.current = false;
+    }
+  }, [safeWalkId]);
+
+  const recenterMap = () => {
+    if (!location) {
+      return;
+    }
+
+    setAutoCenterMap(true);
+  };
+
+  const getSeverityPinColor = (severity: number) => {
+    if (severity <= 2) {
+      return '#10B981';
+    }
+
+    if (severity === 3) {
+      return '#F59E0B';
+    }
+
+    return '#EF4444';
+  };
+
+  const liveMapMarkers = useMemo<MapMarker[]>(() => {
+    const markers: MapMarker[] = [];
+
+    if (routePoints.length > 0) {
+      markers.push({
+        id: 'walk-start',
+        coordinate: routePoints[0],
+        color: '#22C55E',
+        size: 12,
+      });
+    }
+
+    if (location) {
+      markers.push({
+        id: 'walk-current',
+        coordinate: location,
+        color: '#2563EB',
+        size: 14,
+      });
+    }
+
+    quickLogMarkers.forEach((marker) => {
+      markers.push({
+        id: marker.id,
+        coordinate: marker.coordinate,
+        color: getSeverityPinColor(marker.severity),
+        size: 11,
+      });
+    });
+
+    return markers;
+  }, [location, quickLogMarkers, routePoints]);
+
   // Timer
   useEffect(() => {
     if (isActive) {
@@ -110,6 +232,47 @@ export default function ActiveWalkScreen() {
     };
   }, [isActive]);
 
+  useEffect(() => {
+    isActiveRef.current = isActive;
+    if (!isActive) {
+      void flushPendingWalkPoints();
+    }
+  }, [flushPendingWalkPoints, isActive]);
+
+  useEffect(() => {
+    latestLocationRef.current = location;
+  }, [location]);
+
+  useEffect(() => {
+    routeFlushIntervalRef.current = setInterval(() => {
+      void flushPendingWalkPoints();
+    }, ROUTE_PERSIST_INTERVAL_MS);
+
+    return () => {
+      if (routeFlushIntervalRef.current) {
+        clearInterval(routeFlushIntervalRef.current);
+        routeFlushIntervalRef.current = null;
+      }
+
+      void flushPendingWalkPoints();
+    };
+  }, [flushPendingWalkPoints]);
+
+  useEffect(() => {
+    if (location) {
+      setShowLocationHelp(false);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setShowLocationHelp(true);
+    }, 10000);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [location]);
+
   // Location tracking
   useEffect(() => {
     let isMounted = true;
@@ -122,21 +285,132 @@ export default function ActiveWalkScreen() {
           return;
         }
 
+        const applyInitialLocation = (coords: Location.LocationObjectCoords, timestamp?: number) => {
+          const initialPoint: LocationData = {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          };
+
+          if (!isMounted) {
+            return;
+          }
+
+          setLocation(initialPoint);
+
+          if (!safeWalkId) {
+            return;
+          }
+
+          const previous = lastRecordedPointRef.current;
+          if (previous && getDistanceMeters(previous, initialPoint) < ROUTE_RECORDING_MIN_DISTANCE_METERS) {
+            return;
+          }
+
+          setRoutePoints((previousRoutePoints) =>
+            previousRoutePoints.length > 0 ? [...previousRoutePoints, initialPoint] : [initialPoint]
+          );
+          lastRecordedPointRef.current = initialPoint;
+
+          pendingWalkPointBufferRef.current.push({
+            walk_id: safeWalkId,
+            latitude: initialPoint.latitude,
+            longitude: initialPoint.longitude,
+            accuracy: typeof coords.accuracy === 'number' ? coords.accuracy : null,
+            captured_at: new Date(timestamp ?? Date.now()).toISOString(),
+          });
+        };
+
+        try {
+          const initialPosition = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            mayShowUserSettingsDialog: true,
+          });
+          applyInitialLocation(initialPosition.coords, initialPosition.timestamp);
+        } catch (initialLocationError) {
+          console.warn('Initial location unavailable, waiting for live updates:', initialLocationError);
+
+          try {
+            const lastKnownPosition = await Location.getLastKnownPositionAsync({
+              maxAge: LAST_KNOWN_LOCATION_MAX_AGE_MS,
+              requiredAccuracy: LAST_KNOWN_LOCATION_REQUIRED_ACCURACY_METERS,
+            });
+
+            if (lastKnownPosition) {
+              applyInitialLocation(lastKnownPosition.coords, lastKnownPosition.timestamp);
+            }
+          } catch (lastKnownLocationError) {
+            console.warn('Last known location unavailable:', lastKnownLocationError);
+          }
+        }
+
         locationSubscription.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.Balanced,
-            timeInterval: 5000,
-            distanceInterval: 10,
+            timeInterval: 3000,
+            distanceInterval: 1,
           },
           (newLocation) => {
             if (isMounted) {
-              setLocation({
+              const nextPoint = {
                 latitude: newLocation.coords.latitude,
                 longitude: newLocation.coords.longitude,
+              };
+
+              setLocation(nextPoint);
+
+              if (!isActiveRef.current || !safeWalkId) {
+                return;
+              }
+
+              const lastPoint = lastRecordedPointRef.current;
+              const distanceFromLastPoint = lastPoint ? getDistanceMeters(lastPoint, nextPoint) : Infinity;
+              if (distanceFromLastPoint < ROUTE_RECORDING_MIN_DISTANCE_METERS) {
+                return;
+              }
+
+              lastRecordedPointRef.current = nextPoint;
+
+              pendingWalkPointBufferRef.current.push({
+                walk_id: safeWalkId,
+                latitude: nextPoint.latitude,
+                longitude: nextPoint.longitude,
+                accuracy:
+                  typeof newLocation.coords.accuracy === 'number'
+                    ? newLocation.coords.accuracy
+                    : null,
+                captured_at: new Date(newLocation.timestamp ?? Date.now()).toISOString(),
+              });
+
+              setRoutePoints((previous) => {
+                const next = [...previous, nextPoint];
+                if (next.length <= MAX_IN_MEMORY_ROUTE_POINTS) {
+                  return next;
+                }
+
+                return next.slice(next.length - MAX_IN_MEMORY_ROUTE_POINTS);
               });
             }
           }
         );
+
+        locationRecoveryIntervalRef.current = setInterval(async () => {
+          if (!isMounted || latestLocationRef.current) {
+            return;
+          }
+
+          try {
+            const recoveredPosition = await Location.getLastKnownPositionAsync({
+              maxAge: LAST_KNOWN_LOCATION_MAX_AGE_MS,
+              requiredAccuracy: LAST_KNOWN_LOCATION_REQUIRED_ACCURACY_METERS,
+            });
+
+            if (recoveredPosition) {
+              applyInitialLocation(recoveredPosition.coords, recoveredPosition.timestamp);
+            }
+          } catch {
+            // no-op
+          }
+        }, 4000);
       } catch (error) {
         console.error('Error starting location tracking:', error);
       }
@@ -149,8 +423,15 @@ export default function ActiveWalkScreen() {
       if (locationSubscription.current) {
         locationSubscription.current.remove();
       }
+
+      if (locationRecoveryIntervalRef.current) {
+        clearInterval(locationRecoveryIntervalRef.current);
+        locationRecoveryIntervalRef.current = null;
+      }
+
+      void flushPendingWalkPoints();
     };
-  }, []);
+  }, [flushPendingWalkPoints, safeWalkId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -208,6 +489,33 @@ export default function ActiveWalkScreen() {
     setIsActive(!isActive);
   };
 
+  const applyDevTestLocation = () => {
+    const testPoint = DEV_TEST_LOCATION;
+    setLocation(testPoint);
+    setAutoCenterMap(true);
+
+    if (!safeWalkId) {
+      return;
+    }
+
+    const previous = lastRecordedPointRef.current;
+    const shouldPersist = !previous || getDistanceMeters(previous, testPoint) >= ROUTE_RECORDING_MIN_DISTANCE_METERS;
+
+    if (!shouldPersist) {
+      return;
+    }
+
+    lastRecordedPointRef.current = testPoint;
+    setRoutePoints((current) => [...current, testPoint]);
+    pendingWalkPointBufferRef.current.push({
+      walk_id: safeWalkId,
+      latitude: testPoint.latitude,
+      longitude: testPoint.longitude,
+      accuracy: null,
+      captured_at: new Date().toISOString(),
+    });
+  };
+
   const handleEndWalk = () => {
     Alert.alert(
       'End Walk Session?',
@@ -219,13 +527,19 @@ export default function ActiveWalkScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              if (!safeWalkId) {
+                throw new Error('Missing walk ID while ending session.');
+              }
+
               if (reminderNotificationIdRef.current) {
                 await cancelReminderById(reminderNotificationIdRef.current);
                 reminderNotificationIdRef.current = null;
               }
 
+              await flushPendingWalkPoints();
+
               // Update walk with end time
-              await updateWalk(walkId as string, {
+              await updateWalk(safeWalkId, {
                 ended_at: new Date().toISOString(),
               });
 
@@ -233,7 +547,7 @@ export default function ActiveWalkScreen() {
               router.push({
                 pathname: '/walk/summary',
                 params: { 
-                  walkId: walkId as string,
+                  walkId: safeWalkId,
                   duration: duration.toString(),
                   logCount: logCount.toString(),
                 }
@@ -253,6 +567,8 @@ export default function ActiveWalkScreen() {
       return;
     }
 
+    const triggerType = selectedTrigger;
+
     if (!dogId) {
       Alert.alert('Error', 'No dog profile found');
       return;
@@ -265,7 +581,7 @@ export default function ActiveWalkScreen() {
       await createTriggerLog({
         dog_id: dogId,
         owner_id: ownerId,
-        trigger_type: selectedTrigger,
+        trigger_type: triggerType,
         severity: selectedSeverity,
         location_latitude: location?.latitude || null,
         location_longitude: location?.longitude || null,
@@ -275,6 +591,29 @@ export default function ActiveWalkScreen() {
 
       // Update log count
       setLogCount(prev => prev + 1);
+
+      if (location) {
+        setQuickLogMarkers((previous) => {
+          const next = [
+            {
+              id: `quick-${Date.now()}`,
+              triggerType,
+              severity: selectedSeverity,
+              coordinate: {
+                latitude: location.latitude,
+                longitude: location.longitude,
+              },
+            },
+            ...previous,
+          ];
+
+          if (next.length <= 120) {
+            return next;
+          }
+
+          return next.slice(0, 120);
+        });
+      }
       
       // Vibrate for feedback
       Vibration.vibrate(200);
@@ -362,15 +701,79 @@ export default function ActiveWalkScreen() {
           </View>
         </View>
 
-        {/* Distance Alert Simulation */}
+        {/* Active Check-In Reminder */}
         <View style={styles.alertCard}>
           <MaterialCommunityIcons name="bell-ring" size={28} color="#F59E0B" />
           <View style={styles.alertContent}>
-            <Text style={styles.alertTitle}>Distance Alert</Text>
+            <Text style={styles.alertTitle}>Check-In Reminder</Text>
             <Text style={styles.alertText}>
-              Will alert when trigger is within {safeDistanceThreshold}m
+              Every 8 min: keep around {safeDistanceThreshold}m and apply {reminder.title}
             </Text>
           </View>
+        </View>
+
+        {/* Live Map */}
+        <View style={styles.liveMapCard}>
+          <View style={styles.liveMapHeaderRow}>
+            <View style={styles.liveMapTitleWrap}>
+              <Text style={styles.liveMapTitle}>Live Walk Map</Text>
+              <Text style={styles.liveMapSubtitle}>
+                {location ? `Route points: ${routePoints.length}` : 'Waiting for GPS signal...'}
+              </Text>
+              {!location && showLocationHelp ? (
+                <View style={styles.liveMapHelpWrap}>
+                  <Text style={styles.liveMapHelpText}>
+                    {__DEV__
+                      ? 'Emulator tip: send a mock location from Extended Controls > Location or run adb emu geo fix 32.8597 39.9334.'
+                      : 'Waiting for GPS fix. Make sure location services are enabled and stay in an open-sky area for better signal.'}
+                  </Text>
+                  {__DEV__ ? (
+                    <TouchableOpacity style={styles.liveMapHelpButton} onPress={applyDevTestLocation}>
+                      <Text style={styles.liveMapHelpButtonText}>Use Test Location</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.liveMapActionsRow}>
+              <TouchableOpacity
+                style={styles.liveMapActionButton}
+                onPress={() => setShowLiveMap((previous) => !previous)}
+              >
+                <MaterialCommunityIcons name={showLiveMap ? 'eye-off-outline' : 'eye-outline'} size={18} color="#334155" />
+                <Text style={styles.liveMapActionText}>{showLiveMap ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+              {showLiveMap ? (
+                <TouchableOpacity
+                  style={styles.liveMapActionButton}
+                  onPress={recenterMap}
+                  disabled={!location}
+                >
+                  <MaterialCommunityIcons name="crosshairs-gps" size={18} color={location ? '#334155' : '#9CA3AF'} />
+                  <Text style={[styles.liveMapActionText, !location && styles.liveMapActionTextDisabled]}>Center</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+
+          {showLiveMap ? (
+            <View style={styles.liveMapFrame}>
+              <OpenStreetMapView
+                id={`active-${safeWalkId ?? 'walk'}`}
+                style={styles.liveMapView}
+                routeLines={routePoints.length >= 2 ? [routePoints] : []}
+                markers={liveMapMarkers}
+                followCoordinate={location}
+                autoCenter={autoCenterMap}
+                zoomLevel={16}
+                onUserInteractionStart={() => setAutoCenterMap(false)}
+              />
+            </View>
+          ) : (
+            <Text style={styles.liveMapCollapsedText}>
+              Focus mode active. Tap Show to reopen the live map.
+            </Text>
+          )}
         </View>
 
         {/* Stats */}
@@ -633,6 +1036,93 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#B45309',
     marginTop: 2,
+  },
+  liveMapCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: 14,
+    marginBottom: 16,
+  },
+  liveMapHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  liveMapTitleWrap: {
+    flex: 1,
+  },
+  liveMapTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  liveMapSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#475569',
+  },
+  liveMapHelpText: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  liveMapHelpWrap: {
+    marginTop: 4,
+    gap: 6,
+  },
+  liveMapHelpButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  liveMapHelpButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  liveMapActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  liveMapActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D9E2EC',
+    gap: 5,
+  },
+  liveMapActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  liveMapActionTextDisabled: {
+    color: '#9CA3AF',
+  },
+  liveMapFrame: {
+    height: 210,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  liveMapView: {
+    flex: 1,
+  },
+  liveMapCollapsedText: {
+    fontSize: 13,
+    color: '#475569',
+    paddingVertical: 10,
   },
   statsContainer: {
     flexDirection: 'row',

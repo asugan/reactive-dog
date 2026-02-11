@@ -1,9 +1,18 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'reactive_dog_local.db';
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+const isMissingMigrationMetaTableError = (error: unknown) => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const maybeMessage = 'message' in error ? String((error as { message?: unknown }).message ?? '') : '';
+  return maybeMessage.includes('no such table: migration_meta');
+};
 
 const ensureMigrationMetaTable = async (db: SQLite.SQLiteDatabase) => {
   await db.execAsync(`
@@ -79,15 +88,55 @@ const applyInitialSchema = async (db: SQLite.SQLiteDatabase) => {
 
     CREATE INDEX IF NOT EXISTS idx_walks_owner_id ON walks(owner_id);
     CREATE INDEX IF NOT EXISTS idx_walks_started_at ON walks(started_at);
+
+    CREATE TABLE IF NOT EXISTS walk_points (
+      id TEXT PRIMARY KEY NOT NULL,
+      walk_id TEXT NOT NULL,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      accuracy REAL,
+      captured_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (walk_id) REFERENCES walks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_walk_points_walk_id ON walk_points(walk_id);
+    CREATE INDEX IF NOT EXISTS idx_walk_points_captured_at ON walk_points(captured_at);
+  `);
+};
+
+const applySchemaV2 = async (db: SQLite.SQLiteDatabase) => {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS walk_points (
+      id TEXT PRIMARY KEY NOT NULL,
+      walk_id TEXT NOT NULL,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      accuracy REAL,
+      captured_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (walk_id) REFERENCES walks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_walk_points_walk_id ON walk_points(walk_id);
+    CREATE INDEX IF NOT EXISTS idx_walk_points_captured_at ON walk_points(captured_at);
   `);
 };
 
 const getStoredSchemaVersion = async (db: SQLite.SQLiteDatabase) => {
-  await ensureMigrationMetaTable(db);
-  const row = await db.getFirstAsync<{ schema_version: number }>(
-    'SELECT schema_version FROM migration_meta WHERE id = 1'
-  );
-  return row?.schema_version ?? 0;
+  try {
+    await ensureMigrationMetaTable(db);
+    const row = await db.getFirstAsync<{ schema_version: number }>(
+      'SELECT schema_version FROM migration_meta WHERE id = 1'
+    );
+    return row?.schema_version ?? 0;
+  } catch (error) {
+    if (isMissingMigrationMetaTableError(error)) {
+      return 0;
+    }
+
+    throw error;
+  }
 };
 
 const persistSchemaVersion = async (db: SQLite.SQLiteDatabase, schemaVersion: number) => {
@@ -117,6 +166,11 @@ const runMigrations = async (db: SQLite.SQLiteDatabase) => {
       await persistSchemaVersion(db, 1);
     }
 
+    if (version < 2) {
+      await applySchemaV2(db);
+      await persistSchemaVersion(db, 2);
+    }
+
     await db.execAsync('COMMIT');
   } catch (error) {
     await db.execAsync('ROLLBACK');
@@ -129,12 +183,18 @@ export const getDatabase = async () => {
     databasePromise = (async () => {
       const db = await SQLite.openDatabaseAsync(DB_NAME);
       await db.execAsync('PRAGMA journal_mode = WAL');
+      await db.runAsync('PRAGMA foreign_keys = ON');
       await runMigrations(db);
       return db;
     })();
   }
 
-  return databasePromise;
+  try {
+    return await databasePromise;
+  } catch (error) {
+    databasePromise = null;
+    throw error;
+  }
 };
 
 export const initializeLocalData = async () => {

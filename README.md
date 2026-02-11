@@ -17,7 +17,7 @@ The app now runs fully local on the device:
 - Local data: `expo-sqlite`
 - UI: `react-native-paper`
 - Charts: `react-native-chart-kit`
-- Maps: `react-native-maps`, `expo-location`
+- Maps: `@maplibre/maplibre-react-native` (OpenStreetMap), `expo-location`
 - Billing: RevenueCat
 - Analytics: PostHog (optional)
 

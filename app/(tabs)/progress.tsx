@@ -3,10 +3,10 @@ import { Animated, Easing, View, Text, StyleSheet, ScrollView, Alert, Pressable,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
-import MapView, { Marker } from 'react-native-maps';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { ActivityIndicator, Button, Card, IconButton, Modal as PaperModal, Portal } from 'react-native-paper';
+import { OpenStreetMapView, type MapMarker } from '../../components/OpenStreetMapView';
 import { usePremiumGate } from '../../lib/billing/premiumGate';
 import {
   getCurrentWeekKey,
@@ -18,6 +18,7 @@ import { logBillingError, logBillingInfo } from '../../lib/billing/telemetry';
 import { getByOwnerId } from '../../lib/data/repositories/dogProfileRepo';
 import { listByOwner as listTriggerLogsByOwner } from '../../lib/data/repositories/triggerLogRepo';
 import { listByOwner as listWalksByOwner } from '../../lib/data/repositories/walkRepo';
+import { listByWalkIds as listWalkPointsByWalkIds } from '../../lib/data/repositories/walkPointRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
 
 const ACCENT_COLOR = '#1D4ED8';
@@ -51,8 +52,21 @@ interface ReportDogProfile {
 }
 
 interface ReportWalk {
+  id: string;
+  started_at: string;
   ended_at: string | null;
   success_rating: number | null;
+}
+
+interface WalkRoutePoint {
+  latitude: number;
+  longitude: number;
+}
+
+interface WalkRouteOverlay {
+  walkId: string;
+  startedAt: string;
+  points: WalkRoutePoint[];
 }
 
 interface WeeklyCoachSummary {
@@ -106,15 +120,11 @@ export default function ProgressScreen() {
   const [exporting, setExporting] = useState(false);
   const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([]);
   const [showMap, setShowMap] = useState(false);
+  const [walkRoutes, setWalkRoutes] = useState<WalkRouteOverlay[]>([]);
+  const [showRoutesOnMap, setShowRoutesOnMap] = useState(true);
   const [insightMeterState, setInsightMeterState] = useState<PremiumInsightMeterState | null>(null);
   const [isWeeklyInsightUnlocked, setIsWeeklyInsightUnlocked] = useState(false);
   const [isUnlockingInsight, setIsUnlockingInsight] = useState(false);
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 39.9334,
-    longitude: 32.8597,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
-  });
   const {
     status: subscriptionStatus,
     isLoading: isSubscriptionLoading,
@@ -150,6 +160,7 @@ export default function ProgressScreen() {
       setLogs(records as TriggerLog[]);
       calculateStats(records as TriggerLog[]);
       await fetchHeatmapLogs(ownerId);
+      await fetchWalkRoutes(ownerId, cutoffDate.toISOString());
     } catch (error) {
       console.error('Error fetching logs:', error);
     }
@@ -199,6 +210,51 @@ export default function ProgressScreen() {
     }
   };
 
+  const fetchWalkRoutes = async (ownerId: string, since: string) => {
+    try {
+      const walks = await listWalksByOwner(ownerId, {
+        since,
+        sort: '-started_at',
+      });
+
+      const validWalks = (walks as ReportWalk[]).filter((walk) => typeof walk.id === 'string' && walk.id.length > 0);
+      if (validWalks.length === 0) {
+        setWalkRoutes([]);
+        return;
+      }
+
+      const walkPoints = await listWalkPointsByWalkIds(validWalks.map((walk) => walk.id), {
+        sort: 'captured_at',
+      });
+
+      const walkPointMap = new Map<string, WalkRoutePoint[]>();
+      walkPoints.forEach((point) => {
+        const current = walkPointMap.get(point.walk_id) ?? [];
+        current.push({
+          latitude: point.latitude,
+          longitude: point.longitude,
+        });
+        walkPointMap.set(point.walk_id, current);
+      });
+
+      const overlays: WalkRouteOverlay[] = validWalks
+        .map((walk) => {
+          const points = walkPointMap.get(walk.id) ?? [];
+          return {
+            walkId: walk.id,
+            startedAt: walk.started_at,
+            points,
+          };
+        })
+        .filter((route) => route.points.length >= 2);
+
+      setWalkRoutes(overlays);
+    } catch (error) {
+      console.error('Error fetching walk routes:', error);
+      setWalkRoutes([]);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
@@ -234,33 +290,6 @@ export default function ProgressScreen() {
       useNativeDriver: true,
     }).start();
   }, [entranceAnim]);
-
-  // Calculate map region when logs change
-  useEffect(() => {
-    const logsWithLocation = logs.filter(log => log.location_latitude && log.location_longitude);
-    if (logsWithLocation.length > 0) {
-      const latitudes = logsWithLocation.map(log => log.location_latitude!);
-      const longitudes = logsWithLocation.map(log => log.location_longitude!);
-      
-      const minLat = Math.min(...latitudes);
-      const maxLat = Math.max(...latitudes);
-      const minLng = Math.min(...longitudes);
-      const maxLng = Math.max(...longitudes);
-      
-      const centerLat = (minLat + maxLat) / 2;
-      const centerLng = (minLng + maxLng) / 2;
-      
-      const latDelta = (maxLat - minLat) * 1.5 || 0.01;
-      const lngDelta = (maxLng - minLng) * 1.5 || 0.01;
-      
-      setMapRegion({
-        latitude: centerLat,
-        longitude: centerLng,
-        latitudeDelta: Math.max(latDelta, 0.01),
-        longitudeDelta: Math.max(lngDelta, 0.01),
-      });
-    }
-  }, [logs]);
 
   const calculateStats = (logs: TriggerLog[]) => {
     if (logs.length === 0) {
@@ -701,6 +730,27 @@ export default function ProgressScreen() {
     },
   };
 
+  const mapMarkers = useMemo<MapMarker[]>(() => {
+    return logs
+      .filter((log) => log.location_latitude && log.location_longitude)
+      .map((log) => ({
+        id: log.id,
+        coordinate: {
+          latitude: log.location_latitude!,
+          longitude: log.location_longitude!,
+        },
+        color: TRIGGER_COLORS[log.trigger_type] || '#6B7280',
+        size: 9,
+      }));
+  }, [logs]);
+
+  const mapRouteLines = useMemo(() => {
+    return showRoutesOnMap ? walkRoutes.map((route) => route.points) : [];
+  }, [showRoutesOnMap, walkRoutes]);
+
+  const mapMarkerCount = mapMarkers.length;
+  const hasMapData = mapMarkerCount > 0 || walkRoutes.length > 0;
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -727,9 +777,9 @@ export default function ProgressScreen() {
               <Button
                 mode="contained-tonal"
                 icon="map-marker"
-                style={[styles.mapButton, logs.filter(l => l.location_latitude).length === 0 && styles.mapButtonDisabled]}
+                style={[styles.mapButton, !hasMapData && styles.mapButtonDisabled]}
                 onPress={() => setShowMap(true)}
-                disabled={logs.filter(l => l.location_latitude).length === 0}
+                disabled={!hasMapData}
               >
                 Map
               </Button>
@@ -1117,35 +1167,48 @@ export default function ProgressScreen() {
         <PaperModal visible={showMap} onDismiss={() => setShowMap(false)} contentContainerStyle={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.mapHeader}>
-              <Text style={styles.mapTitle}>Trigger Map</Text>
+              <Text style={styles.mapTitle}>Walk & Trigger Map</Text>
               <IconButton icon="close" mode="contained-tonal" onPress={() => setShowMap(false)} />
+            </View>
+
+            <View style={styles.mapControlsRow}>
+              <Pressable
+                style={[styles.mapControlButton, showRoutesOnMap && styles.mapControlButtonActive]}
+                onPress={() => setShowRoutesOnMap((previous) => !previous)}
+              >
+                <MaterialCommunityIcons
+                  name={showRoutesOnMap ? 'map-marker-path' : 'map-marker-path'}
+                  size={14}
+                  color={showRoutesOnMap ? '#1E3A8A' : '#64748B'}
+                />
+                <Text style={[styles.mapControlText, showRoutesOnMap && styles.mapControlTextActive]}>
+                  Routes {walkRoutes.length > 0 ? `(${walkRoutes.length})` : ''}
+                </Text>
+              </Pressable>
+              <View style={styles.mapControlInfoWrap}>
+                <Text style={styles.mapControlInfoText}>Markers: {mapMarkerCount}</Text>
+              </View>
             </View>
             
             <View style={styles.mapContainer}>
-              <MapView
+              <OpenStreetMapView
+                id={`progress-${timeRange}`}
                 style={styles.map}
-                region={mapRegion}
-                onRegionChangeComplete={setMapRegion}
-              >
-                {logs
-                  .filter(log => log.location_latitude && log.location_longitude)
-                  .map((log, index) => (
-                    <Marker
-                      key={log.id}
-                      coordinate={{
-                        latitude: log.location_latitude!,
-                        longitude: log.location_longitude!,
-                      }}
-                      pinColor={TRIGGER_COLORS[log.trigger_type] || '#6B7280'}
-                      title={TRIGGER_LABELS[log.trigger_type] || log.trigger_type}
-                      description={`Severity: ${log.severity} | ${new Date(log.logged_at).toLocaleDateString()}`}
-                    />
-                  ))}
-              </MapView>
+                routeLines={mapRouteLines}
+                markers={mapMarkers}
+                fitToElements
+                zoomLevel={14}
+              />
               
               {/* Legend */}
               <View style={styles.mapLegend}>
-                <Text style={styles.legendTitle}>Trigger Types</Text>
+                <Text style={styles.legendTitle}>Map Legend</Text>
+                {showRoutesOnMap ? (
+                  <View style={styles.routeLegendRow}>
+                    <View style={styles.routeLegendLine} />
+                    <Text style={styles.routeLegendText}>Walk routes</Text>
+                  </View>
+                ) : null}
                 <View style={styles.legendItems}>
                   {Object.entries(TRIGGER_LABELS).map(([key, label]) => (
                     <View key={key} style={styles.legendItem}>
@@ -1598,6 +1661,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#0F172A',
   },
+  mapControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    gap: 10,
+    backgroundColor: '#fff',
+  },
+  mapControlButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    gap: 6,
+  },
+  mapControlButtonActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#93C5FD',
+  },
+  mapControlText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  mapControlTextActive: {
+    color: '#1E3A8A',
+  },
+  mapControlInfoWrap: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  mapControlInfoText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
   closeButton: {
     padding: 8,
     backgroundColor: '#F3F4F6',
@@ -1627,7 +1733,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  routeLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  routeLegendLine: {
+    width: 28,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#2563EB',
+  },
+  routeLegendText: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
   },
   legendItems: {
     flexDirection: 'row',

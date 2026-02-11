@@ -74,6 +74,10 @@ const DEFAULT_WEEKLY_PLAN: WeeklyPlan = {
   weeklyGoal: 3,
 };
 
+const getTechniqueLabel = (techniqueId: string) => {
+  return TECHNIQUE_OPTIONS.find((technique) => technique.id === techniqueId)?.label ?? 'Custom';
+};
+
 export default function WalkSetupScreen() {
   const [dogProfile, setDogProfile] = useState<DogProfile | null>(null);
   const [distanceThreshold, setDistanceThreshold] = useState(DEFAULT_DISTANCE_THRESHOLD);
@@ -86,6 +90,7 @@ export default function WalkSetupScreen() {
   });
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>(DEFAULT_WEEKLY_PLAN);
+  const [hasStoredWalkSetup, setHasStoredWalkSetup] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const loadWeeklyPlan = useCallback(async (userId: string) => {
@@ -116,7 +121,7 @@ export default function WalkSetupScreen() {
     try {
       const stored = await AsyncStorage.getItem(`${WALK_SETUP_STORAGE_KEY_PREFIX}${userId}`);
       if (!stored) {
-        return { hasStoredTechnique: false };
+        return { hasStoredTechnique: false, hasStoredDistance: false };
       }
 
       const parsed = JSON.parse(stored) as Partial<WalkSetupPreferences>;
@@ -137,10 +142,10 @@ export default function WalkSetupScreen() {
         setSelectedTechnique(nextTechnique);
       }
 
-      return { hasStoredTechnique: hasValidTechnique };
+      return { hasStoredTechnique: hasValidTechnique, hasStoredDistance: hasValidDistance };
     } catch (error) {
       console.error('Error loading walk setup preferences:', error);
-      return { hasStoredTechnique: false };
+      return { hasStoredTechnique: false, hasStoredDistance: false };
     }
   }, []);
 
@@ -150,6 +155,7 @@ export default function WalkSetupScreen() {
       setOwnerId(localOwnerId);
       const loadedPlan = await loadWeeklyPlan(localOwnerId);
       const walkSetupPreferences = await loadWalkSetupPreferences(localOwnerId);
+      setHasStoredWalkSetup(walkSetupPreferences.hasStoredTechnique || walkSetupPreferences.hasStoredDistance);
 
       const data = await getByOwnerId(localOwnerId);
       if (data) {
@@ -273,6 +279,17 @@ export default function WalkSetupScreen() {
     }
 
     startWalk();
+  };
+
+  const handleQuickStart = () => {
+    Alert.alert(
+      'Quick Start BAT Walk',
+      `Start now with ${distanceThreshold}m + ${getTechniqueLabel(selectedTechnique)}. You can still quick-log during the walk.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Start Now', onPress: () => startWalk() },
+      ]
+    );
   };
 
   const startWalk = async () => {
@@ -518,6 +535,27 @@ export default function WalkSetupScreen() {
           </View>
         </View>
 
+        {hasStoredWalkSetup ? (
+          <View style={styles.quickStartCard}>
+            <View style={styles.quickStartIconWrap}>
+              <MaterialCommunityIcons name="run-fast" size={20} color="#1D4ED8" />
+            </View>
+            <View style={styles.quickStartContent}>
+              <Text style={styles.quickStartTitle}>Quick Start</Text>
+              <Text style={styles.quickStartSubtitle}>
+                Last setup: {distanceThreshold}m - {getTechniqueLabel(selectedTechnique)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.quickStartButton, loading && styles.quickStartButtonDisabled]}
+              onPress={handleQuickStart}
+              disabled={loading}
+            >
+              <Text style={styles.quickStartButtonText}>Start</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Start Button */}
         <TouchableOpacity
           style={[styles.startButton, loading && styles.startButtonDisabled]}
@@ -753,6 +791,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#1E3A8A',
     fontWeight: '500',
+  },
+  quickStartCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: 12,
+    marginBottom: 14,
+    gap: 10,
+  },
+  quickStartIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DBEAFE',
+  },
+  quickStartContent: {
+    flex: 1,
+  },
+  quickStartTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  quickStartSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#475569',
+  },
+  quickStartButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#1D4ED8',
+  },
+  quickStartButtonDisabled: {
+    opacity: 0.6,
+  },
+  quickStartButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   techniqueCard: {
     flexDirection: 'row',

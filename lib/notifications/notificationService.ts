@@ -239,7 +239,7 @@ export const syncWeeklyPlanReminders = async ({
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'BAT session reminder',
-        body: `${label} icin bugun kisa bir BAT calismasi planli.`,
+        body: `Today is a planned BAT day for ${label}. Keep it short and calm.`,
         sound: 'default',
       },
       trigger: {
@@ -284,8 +284,8 @@ export const scheduleActiveWalkCheckInReminder = async ({
 
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'BAT walk check-in',
-      body: `Mesafeyi ${distanceLabel} civarinda tut ve ${techniqueLabel} teknigini hatirla.`,
+      title: 'BAT walk check-in reminder',
+      body: `Manual check-in: keep around ${distanceLabel} and use ${techniqueLabel}.`,
       sound: 'default',
     },
     trigger: {
@@ -320,7 +320,7 @@ export const sendTestNotification = async () => {
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Notifications are active',
-      body: 'BAT hatirlaticilari bu cihazda aktif.',
+      body: 'BAT reminders are active on this device.',
       sound: 'default',
     },
     trigger: null,
