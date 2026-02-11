@@ -19,4 +19,5 @@ yarn-error.log*
 
 expo-env.d.ts
 .expo/
+android/
 # @end expo-cli

@@ -25,6 +25,8 @@ const SEVERITY_LABELS: { [key: number]: string } = {
   5: 'Severe/aggressive',
 };
 
+const SEVERITY_OPTIONS = [1, 2, 3, 4, 5];
+
 interface TriggerLog {
   id: string;
   trigger_type: string;
@@ -196,15 +198,14 @@ export default function LogScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>How intense was the reaction?</Text>
           <SegmentedButtons
+            style={styles.severitySegmented}
             value={String(severity)}
             onValueChange={(value) => setSeverity(Number(value))}
-            buttons={[
-              { value: '1', label: '1' },
-              { value: '2', label: '2' },
-              { value: '3', label: '3' },
-              { value: '4', label: '4' },
-              { value: '5', label: '5' },
-            ]}
+            buttons={SEVERITY_OPTIONS.map((value) => ({
+              value: String(value),
+              label: String(value),
+              style: styles.severitySegmentButton,
+            }))}
           />
           <Text style={styles.severityLabel}>{SEVERITY_LABELS[severity]}</Text>
         </View>
@@ -212,17 +213,16 @@ export default function LogScreen() {
         {/* Distance Input */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Distance (optional)</Text>
-          <View style={styles.distanceInputContainer}>
-            <TextInput
-              style={styles.distanceInput}
-              value={distance}
-              onChangeText={setDistance}
-              placeholder="e.g., 10"
-              keyboardType="numeric"
-              placeholderTextColor="#9CA3AF"
-            />
-            <Text style={styles.distanceUnit}>meters</Text>
-          </View>
+          <TextInput
+            mode="outlined"
+            style={styles.distanceInput}
+            value={distance}
+            onChangeText={setDistance}
+            placeholder="e.g., 10"
+            keyboardType="numeric"
+            placeholderTextColor="#9CA3AF"
+            right={<TextInput.Affix text="meters" textStyle={styles.distanceAffix} />}
+          />
         </View>
 
         {/* Notes Input */}
@@ -336,23 +336,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  distanceInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  severitySegmented: {
+    width: '100%',
+  },
+  severitySegmentButton: {
+    flex: 1,
+    minWidth: 0,
   },
   distanceInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#D9E2EC',
-    borderRadius: 12,
-    padding: 16,
     fontSize: 16,
     color: '#1F2937',
     backgroundColor: '#FFFFFF',
   },
-  distanceUnit: {
-    fontSize: 16,
+  distanceAffix: {
+    fontSize: 15,
     color: '#475569',
     fontWeight: '500',
   },

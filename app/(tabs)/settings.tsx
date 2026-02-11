@@ -169,11 +169,18 @@ export default function SettingsScreen() {
             </View>
 
             <View style={styles.dataActions}>
-              <Button mode="contained" onPress={handleExportData} loading={exportingData} disabled={exportingData || importingData}>
+              <Button
+                mode="contained"
+                style={styles.dataActionButton}
+                onPress={handleExportData}
+                loading={exportingData}
+                disabled={exportingData || importingData}
+              >
                 Export JSON
               </Button>
               <Button
                 mode="outlined"
+                style={styles.dataActionButton}
                 onPress={() => setShowImportEditor((value) => !value)}
                 disabled={importingData || exportingData}
               >
@@ -343,7 +350,11 @@ const styles = StyleSheet.create({
   dataActions: {
     marginTop: 14,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     gap: 10,
+  },
+  dataActionButton: {
+    flex: 1,
   },
   importWrap: {
     marginTop: 14,

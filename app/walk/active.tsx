@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -281,7 +281,11 @@ export default function ActiveWalkScreen() {
       </View>
 
       {/* Main Content */}
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.contentScroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Technique Reminder Card */}
         <View style={styles.reminderCard}>
           <View style={styles.reminderIconContainer}>
@@ -345,7 +349,7 @@ export default function ActiveWalkScreen() {
             <Text style={styles.tipText}>End on a positive note</Text>
           </View>
         </View>
-      </View>
+      </ScrollView>
 
       {/* Footer Controls */}
       <View style={styles.footer}>
@@ -506,9 +510,12 @@ const styles = StyleSheet.create({
     color: '#7C3AED',
     marginLeft: 8,
   },
-  content: {
+  contentScroll: {
     flex: 1,
+  },
+  content: {
     padding: 20,
+    paddingBottom: 28,
   },
   reminderCard: {
     flexDirection: 'row',

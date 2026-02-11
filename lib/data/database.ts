@@ -5,6 +5,16 @@ const CURRENT_SCHEMA_VERSION = 1;
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
+const ensureMigrationMetaTable = async (db: SQLite.SQLiteDatabase) => {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS migration_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      schema_version INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+};
+
 const applyInitialSchema = async (db: SQLite.SQLiteDatabase) => {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS migration_meta (
@@ -73,6 +83,7 @@ const applyInitialSchema = async (db: SQLite.SQLiteDatabase) => {
 };
 
 const getStoredSchemaVersion = async (db: SQLite.SQLiteDatabase) => {
+  await ensureMigrationMetaTable(db);
   const row = await db.getFirstAsync<{ schema_version: number }>(
     'SELECT schema_version FROM migration_meta WHERE id = 1'
   );

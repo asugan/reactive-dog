@@ -538,7 +538,7 @@ export default function ProgressScreen() {
         >
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <View>
+            <View style={styles.headerTextBlock}>
               <Text style={styles.title}>Progress</Text>
               <Text style={styles.subtitle}>Track your dog&apos;s improvement over time</Text>
             </View>
@@ -1093,14 +1093,22 @@ const styles = StyleSheet.create({
   },
   headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     alignItems: 'flex-start',
+    gap: 10,
+  },
+  headerTextBlock: {
+    width: '100%',
   },
   headerButtons: {
+    width: '100%',
     flexDirection: 'row',
     gap: 8,
+    justifyContent: 'space-between',
   },
   mapButton: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E0EDFF',
@@ -1113,6 +1121,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   exportButton: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E0EDFF',
