@@ -13,8 +13,7 @@
       "bundleIdentifier": "com.petopia.reactivedog",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "This app uses your location to track your walk routes and provide distance-based training alerts for your reactive dog.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses your location to track your walk routes and provide distance-based training alerts for your reactive dog."
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to track your walk routes and provide distance-based training alerts for your reactive dog."
       }
     },
     "android": {
