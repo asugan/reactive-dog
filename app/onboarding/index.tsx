@@ -1,45 +1,92 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { clearOnboardingSessionData, setOnboardingComplete, setOnboardingStep } from '../../lib/data/repositories/settingsRepo';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  const handleStart = async () => {
+    try {
+      await setOnboardingComplete(false);
+      await setOnboardingStep('dog_profile');
+      await clearOnboardingSessionData();
+    } catch (error) {
+      console.error('Failed to prime onboarding state:', error);
+    }
+
+    router.push('/onboarding/dog-profile');
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🐕</Text>
-        </View>
-        
-        <Text style={styles.title}>You&apos;re not alone</Text>
-        
-        <Text style={styles.subtitle}>
-          30% of dogs are reactive. We&apos;re here to help you and your dog thrive.
-        </Text>
-        
-        <View style={styles.statsContainer}>
-          <View style={styles.stat}>
-            <Text style={styles.statNumber}>30%</Text>
-            <Text style={styles.statLabel}>of dogs are reactive</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statNumber}>5x</Text>
-            <Text style={styles.statLabel}>faster to get started</Text>
-          </View>
-        </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View pointerEvents="none" style={styles.backgroundOrbTop} />
+      <View pointerEvents="none" style={styles.backgroundOrbBottom} />
 
-        <Text style={styles.description}>
-          Track triggers, train with proven methods, and build calmer daily walks.
-        </Text>
-      </View>
-
-      <TouchableOpacity 
-        style={styles.button}
-        onPress={() => router.push('/onboarding/dog-profile')}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.buttonText}>Get Started</Text>
-      </TouchableOpacity>
+        <View style={styles.heroSection}>
+          <View style={styles.badgeRow}>
+            <Text style={styles.badge}>Personalized 4-step onboarding</Text>
+          </View>
+
+          <View style={styles.iconContainer}>
+            <Text style={styles.icon}>🐾</Text>
+          </View>
+
+          <Text style={styles.title}>Calmer walks start here</Text>
+          <Text style={styles.subtitle}>
+            We will map your dog&apos;s triggers, pick the best training approach, and give you a clear day-one plan in minutes.
+          </Text>
+
+        </View>
+
+        <View style={styles.valueCard}>
+          <View style={styles.valueRow}>
+            <Text style={styles.valueEmoji}>🎯</Text>
+            <View style={styles.valueTextWrap}>
+              <Text style={styles.valueTitle}>Personalized method</Text>
+              <Text style={styles.valueText}>Get a BAT, LAT, or CC/DS recommendation based on your answers.</Text>
+            </View>
+          </View>
+          <View style={styles.valueRow}>
+            <Text style={styles.valueEmoji}>🧭</Text>
+            <View style={styles.valueTextWrap}>
+              <Text style={styles.valueTitle}>Resume anytime</Text>
+              <Text style={styles.valueText}>If onboarding is interrupted, users continue exactly where they left off.</Text>
+            </View>
+          </View>
+          <View style={styles.valueRow}>
+            <Text style={styles.valueEmoji}>⚡</Text>
+            <View style={styles.valueTextWrap}>
+              <Text style={styles.valueTitle}>Fast setup</Text>
+              <Text style={styles.valueText}>Only the inputs needed to start useful guidance right away.</Text>
+            </View>
+          </View>
+        </View>
+
+        <ScrollView
+          horizontal
+          contentContainerStyle={styles.stepsRow}
+          showsHorizontalScrollIndicator={false}
+        >
+            {['1. Welcome', '2. Dog Profile', '3. Assessment', '4. Technique'].map((stepLabel) => (
+              <View key={stepLabel} style={styles.stepChip}>
+                <Text style={styles.stepChipText}>{stepLabel}</Text>
+              </View>
+            ))}
+        </ScrollView>
+      </ScrollView>
+
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+        <TouchableOpacity style={styles.button} onPress={handleStart}>
+          <Text style={styles.buttonText}>Start Onboarding</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -47,76 +94,148 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F5FAFF',
+    overflow: 'hidden',
   },
-  content: {
+  scrollView: {
     flex: 1,
-    justifyContent: 'center',
+  },
+  backgroundOrbTop: {
+    position: 'absolute',
+    top: -66,
+    right: -44,
+    width: 230,
+    height: 230,
+    borderRadius: 130,
+    backgroundColor: '#DBEAFE',
+  },
+  backgroundOrbBottom: {
+    position: 'absolute',
+    bottom: -146,
+    left: -50,
+    width: 280,
+    height: 280,
+    borderRadius: 150,
+    backgroundColor: '#CCFBF1',
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 18,
+  },
+  heroSection: {
     alignItems: 'center',
-    padding: 24,
+    marginBottom: 18,
+  },
+  badgeRow: {
+    marginBottom: 18,
+  },
+  badge: {
+    backgroundColor: '#E0F2FE',
+    color: '#1D4ED8',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 12,
+    fontWeight: '700',
   },
   iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#F3E8FF',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#E0F2FE',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
   icon: {
-    fontSize: 60,
+    fontSize: 46,
   },
   title: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: 'bold',
-    color: '#1F2937',
-    marginBottom: 16,
+    color: '#0F172A',
+    marginBottom: 10,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 18,
-    color: '#6B7280',
+    fontSize: 15,
+    color: '#475569',
     textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 26,
+    lineHeight: 23,
+    maxWidth: 620,
   },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  valueCard: {
     width: '100%',
-    marginBottom: 32,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#DCEAFE',
+    padding: 14,
+    gap: 10,
   },
-  stat: {
-    alignItems: 'center',
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#7C3AED',
-    marginBottom: 4,
+  valueTextWrap: {
+    flex: 1,
   },
-  statLabel: {
+  valueEmoji: {
+    fontSize: 18,
+    marginTop: 1,
+  },
+  valueTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  valueText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#475569',
+    lineHeight: 20,
   },
-  description: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
+  stepsRow: {
+    paddingRight: 6,
+    gap: 8,
+    paddingBottom: 2,
+  },
+  stepChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  stepChipText: {
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
   button: {
-    backgroundColor: '#7C3AED',
-    marginHorizontal: 24,
-    marginBottom: 24,
+    backgroundColor: '#1D4ED8',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
+    shadowColor: '#1D4ED8',
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

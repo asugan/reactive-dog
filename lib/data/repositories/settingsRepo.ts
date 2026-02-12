@@ -4,6 +4,21 @@ import type { DogProfile, LocalExportPayload, TriggerLog, WalkPoint, WalkRecord 
 
 const LOCAL_OWNER_ID_KEY = 'local_owner_id';
 const ONBOARDING_COMPLETE_KEY = 'onboarding_complete';
+const ONBOARDING_STEP_KEY = 'onboarding_step';
+const ONBOARDING_ASSESSMENT_STATE_KEY = 'onboarding_assessment_state';
+const ONBOARDING_RECOMMENDED_TECHNIQUE_KEY = 'onboarding_recommended_technique';
+
+const VALID_ONBOARDING_STEPS = ['welcome', 'dog_profile', 'assessment', 'technique', 'completed'] as const;
+const VALID_TECHNIQUE_VALUES = ['BAT', 'CC_DS', 'LAT'] as const;
+
+export type OnboardingStep = (typeof VALID_ONBOARDING_STEPS)[number];
+export type TechniqueKey = (typeof VALID_TECHNIQUE_VALUES)[number];
+
+export interface OnboardingAssessmentState {
+  currentQuestion: number;
+  answers: Record<string, string>;
+  scores: Record<TechniqueKey, number>;
+}
 
 interface DbSettingRow {
   key: string;
@@ -70,6 +85,22 @@ interface ParsedImportPayload {
   walk_points: Partial<WalkPoint>[];
   app_settings: Record<string, unknown>;
 }
+
+const isOnboardingStep = (value: string): value is OnboardingStep => {
+  return (VALID_ONBOARDING_STEPS as readonly string[]).includes(value);
+};
+
+const normalizeOnboardingStep = (value: string | null, onboardingComplete: boolean): OnboardingStep => {
+  if (value && isOnboardingStep(value)) {
+    return value;
+  }
+
+  return onboardingComplete ? 'completed' : 'welcome';
+};
+
+const isTechniqueValue = (value: string): value is TechniqueKey => {
+  return (VALID_TECHNIQUE_VALUES as readonly string[]).includes(value);
+};
 
 const mapDogProfileRow = (row: DbDogProfileRow): DogProfile => {
   let triggers: string[] = [];
@@ -167,6 +198,11 @@ export const setSetting = async (key: string, value: string) => {
   );
 };
 
+export const deleteSetting = async (key: string) => {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM app_settings WHERE key = ?', [key]);
+};
+
 export const getAllSettings = async () => {
   const db = await getDatabase();
   const rows = (await db.getAllAsync<DbSettingRow>('SELECT key, value FROM app_settings ORDER BY key ASC')) as DbSettingRow[];
@@ -179,12 +215,19 @@ export const getAllSettings = async () => {
 export const ensureLocalOwnerId = async () => {
   const existing = await getSetting(LOCAL_OWNER_ID_KEY);
   if (existing) {
+    const onboardingComplete = await isOnboardingComplete();
+    const existingStep = await getSetting(ONBOARDING_STEP_KEY);
+    if (!existingStep || !isOnboardingStep(existingStep)) {
+      await setSetting(ONBOARDING_STEP_KEY, onboardingComplete ? 'completed' : 'welcome');
+    }
+
     return existing;
   }
 
   const ownerId = generateId('owner');
   await setSetting(LOCAL_OWNER_ID_KEY, ownerId);
   await setSetting(ONBOARDING_COMPLETE_KEY, 'false');
+  await setSetting(ONBOARDING_STEP_KEY, 'welcome');
   return ownerId;
 };
 
@@ -195,6 +238,96 @@ export const setOnboardingComplete = async (value: boolean) => {
 export const isOnboardingComplete = async () => {
   const value = await getSetting(ONBOARDING_COMPLETE_KEY);
   return value === 'true';
+};
+
+export const getOnboardingStep = async (): Promise<OnboardingStep> => {
+  const onboardingComplete = await isOnboardingComplete();
+  const storedStep = await getSetting(ONBOARDING_STEP_KEY);
+  const normalizedStep = normalizeOnboardingStep(storedStep, onboardingComplete);
+
+  if (storedStep !== normalizedStep) {
+    await setSetting(ONBOARDING_STEP_KEY, normalizedStep);
+  }
+
+  return normalizedStep;
+};
+
+export const setOnboardingStep = async (step: OnboardingStep) => {
+  await setSetting(ONBOARDING_STEP_KEY, step);
+};
+
+const isValidAssessmentState = (value: unknown): value is OnboardingAssessmentState => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const maybeState = value as Partial<OnboardingAssessmentState>;
+  if (typeof maybeState.currentQuestion !== 'number' || !Number.isInteger(maybeState.currentQuestion)) {
+    return false;
+  }
+
+  if (!maybeState.answers || typeof maybeState.answers !== 'object' || Array.isArray(maybeState.answers)) {
+    return false;
+  }
+
+  if (!maybeState.scores || typeof maybeState.scores !== 'object' || Array.isArray(maybeState.scores)) {
+    return false;
+  }
+
+  const scores = maybeState.scores as Partial<Record<TechniqueKey, unknown>>;
+  for (const technique of VALID_TECHNIQUE_VALUES) {
+    if (typeof scores[technique] !== 'number' || !Number.isFinite(scores[technique])) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+export const getOnboardingAssessmentState = async (): Promise<OnboardingAssessmentState | null> => {
+  const value = await getSetting(ONBOARDING_ASSESSMENT_STATE_KEY);
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isValidAssessmentState(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setOnboardingAssessmentState = async (state: OnboardingAssessmentState | null) => {
+  if (!state) {
+    await deleteSetting(ONBOARDING_ASSESSMENT_STATE_KEY);
+    return;
+  }
+
+  await setSetting(ONBOARDING_ASSESSMENT_STATE_KEY, JSON.stringify(state));
+};
+
+export const getOnboardingRecommendedTechnique = async (): Promise<TechniqueKey | null> => {
+  const value = await getSetting(ONBOARDING_RECOMMENDED_TECHNIQUE_KEY);
+  if (!value) {
+    return null;
+  }
+
+  return isTechniqueValue(value) ? value : null;
+};
+
+export const setOnboardingRecommendedTechnique = async (technique: TechniqueKey | null) => {
+  if (!technique) {
+    await deleteSetting(ONBOARDING_RECOMMENDED_TECHNIQUE_KEY);
+    return;
+  }
+
+  await setSetting(ONBOARDING_RECOMMENDED_TECHNIQUE_KEY, technique);
+};
+
+export const clearOnboardingSessionData = async () => {
+  await deleteSetting(ONBOARDING_ASSESSMENT_STATE_KEY);
+  await deleteSetting(ONBOARDING_RECOMMENDED_TECHNIQUE_KEY);
 };
 
 export const clearAllLocalData = async () => {
@@ -218,6 +351,11 @@ export const clearAllLocalData = async () => {
     await db.runAsync('INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)', [
       ONBOARDING_COMPLETE_KEY,
       'false',
+      now,
+    ]);
+    await db.runAsync('INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)', [
+      ONBOARDING_STEP_KEY,
+      'welcome',
       now,
     ]);
 
@@ -312,14 +450,29 @@ export const importLocalData = async (value: unknown) => {
     ]);
 
     const importedOnboarding = normalizeBooleanString(resolveString(importedSettings[ONBOARDING_COMPLETE_KEY], 'false'));
+    const importedStep = normalizeOnboardingStep(
+      resolveNullableString(importedSettings[ONBOARDING_STEP_KEY]),
+      importedOnboarding === 'true'
+    );
+    const resolvedStep = importedOnboarding === 'true'
+      ? 'completed'
+      : importedStep === 'completed'
+        ? 'welcome'
+        : importedStep;
+
     await db.runAsync('INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)', [
       ONBOARDING_COMPLETE_KEY,
       importedOnboarding,
       now,
     ]);
+    await db.runAsync('INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)', [
+      ONBOARDING_STEP_KEY,
+      resolvedStep,
+      now,
+    ]);
 
     for (const [key, rawValue] of Object.entries(importedSettings)) {
-      if (key === LOCAL_OWNER_ID_KEY || key === ONBOARDING_COMPLETE_KEY) {
+      if (key === LOCAL_OWNER_ID_KEY || key === ONBOARDING_COMPLETE_KEY || key === ONBOARDING_STEP_KEY) {
         continue;
       }
 
@@ -491,4 +644,7 @@ export const importLocalData = async (value: unknown) => {
 export const SETTING_KEYS = {
   LOCAL_OWNER_ID_KEY,
   ONBOARDING_COMPLETE_KEY,
+  ONBOARDING_STEP_KEY,
+  ONBOARDING_ASSESSMENT_STATE_KEY,
+  ONBOARDING_RECOMMENDED_TECHNIQUE_KEY,
 } as const;

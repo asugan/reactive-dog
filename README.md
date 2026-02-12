@@ -23,7 +23,7 @@ The app now runs fully local on the device:
 
 ## Main features
 
-- Onboarding flow: dog profile + assessment + technique recommendation
+- Onboarding flow: step-based dog profile + resumable assessment + technique recommendation
 - Quick trigger logging: type, severity, distance, notes
 - BAT walk mode: setup, active walk, quick logging, summary
 - Local notifications: weekly BAT reminders and active-walk check-ins

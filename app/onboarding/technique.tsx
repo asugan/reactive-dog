@@ -1,8 +1,16 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getByOwnerId, update as updateDogProfile } from '../../lib/data/repositories/dogProfileRepo';
 import { getLocalOwnerId } from '../../lib/localApp';
+import {
+  clearOnboardingSessionData,
+  getOnboardingRecommendedTechnique,
+  setOnboardingComplete,
+  setOnboardingStep,
+  type TechniqueKey,
+} from '../../lib/data/repositories/settingsRepo';
 
 const TECHNIQUES: Record<string, {
   name: string;
@@ -55,32 +63,100 @@ const TECHNIQUES: Record<string, {
 
 export default function TechniqueScreen() {
   const router = useRouter();
-  const { technique = 'BAT' } = useLocalSearchParams<{ technique: string }>();
-  
-  const techniqueData = TECHNIQUES[technique] || TECHNIQUES.BAT;
+  const { technique } = useLocalSearchParams<{ technique?: string | string[] }>();
+  const [resolvedTechnique, setResolvedTechnique] = useState<TechniqueKey>('BAT');
+  const [loadingTechnique, setLoadingTechnique] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const resolveTechnique = async () => {
+      try {
+        await setOnboardingComplete(false);
+        await setOnboardingStep('technique');
+
+        const paramTechnique = Array.isArray(technique) ? technique[0] : technique;
+        if (paramTechnique && (paramTechnique === 'BAT' || paramTechnique === 'CC_DS' || paramTechnique === 'LAT')) {
+          if (mounted) {
+            setResolvedTechnique(paramTechnique);
+          }
+          return;
+        }
+
+        const storedTechnique = await getOnboardingRecommendedTechnique();
+        if (storedTechnique && mounted) {
+          setResolvedTechnique(storedTechnique);
+        }
+      } catch (error) {
+        console.error('Failed to resolve recommended technique:', error);
+      } finally {
+        if (mounted) {
+          setLoadingTechnique(false);
+        }
+      }
+    };
+
+    resolveTechnique().catch((error) => {
+      console.error('Failed to initialize technique screen:', error);
+      if (mounted) {
+        setLoadingTechnique(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [technique]);
+
+  const techniqueData = TECHNIQUES[resolvedTechnique] || TECHNIQUES.BAT;
 
   const handleComplete = async () => {
+    if (submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+
     try {
-      // Update dog profile with recommended technique
       const ownerId = await getLocalOwnerId();
       const profile = await getByOwnerId(ownerId);
 
-      if (profile) {
-        await updateDogProfile(profile.id, {
-          training_method: technique,
-        });
+      if (!profile) {
+        router.replace('/onboarding/dog-profile');
+        return;
       }
+
+      await updateDogProfile(profile.id, {
+        training_method: resolvedTechnique,
+      });
+
+      await setOnboardingComplete(true);
+      await setOnboardingStep('completed');
+      await clearOnboardingSessionData();
+      router.replace('/(tabs)');
     } catch (error) {
       console.error('Error updating training method:', error);
+    } finally {
+      setSubmitting(false);
     }
-    
-    // Navigate to main app
-    router.replace('/(tabs)');
   };
+
+  if (loadingTechnique) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1D4ED8" />
+          <Text style={styles.loadingText}>Preparing your plan...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <Text style={styles.stepLabel}>Step 4 of 4</Text>
         <View style={styles.header}>
           <Text style={styles.title}>Your recommended training method</Text>
           <Text style={styles.subtitle}>
@@ -128,8 +204,8 @@ export default function TechniqueScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.button} onPress={handleComplete}>
-          <Text style={styles.buttonText}>Start Training</Text>
+        <TouchableOpacity style={[styles.button, submitting && styles.buttonDisabled]} onPress={handleComplete} disabled={submitting}>
+          <Text style={styles.buttonText}>{submitting ? 'Saving...' : 'Start Training'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -139,7 +215,17 @@ export default function TechniqueScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F5FAFF',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: '#475569',
   },
   scrollView: {
     flex: 1,
@@ -148,26 +234,37 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 100,
   },
+  stepLabel: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E0F2FE',
+    color: '#1D4ED8',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
   header: {
     marginBottom: 24,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: '#475569',
     lineHeight: 24,
   },
   techniqueCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
     borderWidth: 2,
-    borderColor: '#7C3AED',
+    borderColor: '#D5E3F4',
   },
   techniqueBadge: {
     alignSelf: 'flex-start',
@@ -184,12 +281,12 @@ const styles = StyleSheet.create({
   techniqueFullName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#0F172A',
     marginBottom: 12,
   },
   techniqueDescription: {
     fontSize: 16,
-    color: '#4B5563',
+    color: '#334155',
     lineHeight: 24,
     marginBottom: 24,
   },
@@ -199,7 +296,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: '#1E293B',
     marginBottom: 12,
   },
   bulletPoint: {
@@ -209,13 +306,13 @@ const styles = StyleSheet.create({
   },
   bullet: {
     fontSize: 16,
-    color: '#7C3AED',
+    color: '#1D4ED8',
     marginRight: 8,
     fontWeight: '700',
   },
   bulletText: {
     fontSize: 15,
-    color: '#4B5563',
+    color: '#334155',
     flex: 1,
     lineHeight: 22,
   },
@@ -233,15 +330,18 @@ const styles = StyleSheet.create({
   footer: {
     padding: 24,
     paddingBottom: 32,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: '#D5E3F4',
   },
   button: {
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#1D4ED8',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
   buttonText: {
     color: '#fff',

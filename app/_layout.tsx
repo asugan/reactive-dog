@@ -4,6 +4,7 @@ import { MD3LightTheme, PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { getByOwnerId } from '../lib/data/repositories/dogProfileRepo';
+import { getOnboardingStep, isOnboardingComplete, type OnboardingStep } from '../lib/data/repositories/settingsRepo';
 import { getLocalOwnerId, initializeLocalApp } from '../lib/localApp';
 import { AnimatedSplashScreen } from '../components/AnimatedSplashScreen';
 import { SubscriptionProvider } from '../lib/billing/subscription';
@@ -74,6 +75,26 @@ const appTheme = {
   },
 };
 
+const getExpectedOnboardingPath = (step: OnboardingStep, hasDogProfile: boolean) => {
+  if (!hasDogProfile) {
+    return step === 'welcome' ? '/onboarding' : '/onboarding/dog-profile';
+  }
+
+  if (step === 'dog_profile') {
+    return '/onboarding/dog-profile';
+  }
+
+  if (step === 'assessment') {
+    return '/onboarding/assessment';
+  }
+
+  if (step === 'technique') {
+    return '/onboarding/technique';
+  }
+
+  return '/onboarding';
+};
+
 function useProtectedRoute() {
   const segments = useSegments();
   const router = useRouter();
@@ -86,6 +107,12 @@ function useProtectedRoute() {
       await initializeLocalApp();
       const ownerId = await getLocalOwnerId();
       const topSegment = segments[0];
+      const currentOnboardingPath =
+        topSegment === 'onboarding'
+          ? segments[1]
+            ? `/onboarding/${segments[1]}`
+            : '/onboarding'
+          : null;
 
       if (!ownerId) {
         if (topSegment !== 'onboarding') {
@@ -100,13 +127,21 @@ function useProtectedRoute() {
       }
 
       try {
-        const profile = await getByOwnerId(ownerId);
-        const hasDogProfile = Boolean(profile);
-        const inOnboarding = topSegment === 'onboarding';
+        const [profile, onboardingComplete, onboardingStep] = await Promise.all([
+          getByOwnerId(ownerId),
+          isOnboardingComplete(),
+          getOnboardingStep(),
+        ]);
 
-        if (!hasDogProfile && !inOnboarding) {
-          router.replace('/onboarding');
-        } else if (hasDogProfile && (inOnboarding || !topSegment)) {
+        const hasDogProfile = Boolean(profile);
+        const isFullyOnboarded = hasDogProfile && onboardingComplete && onboardingStep === 'completed';
+
+        if (!isFullyOnboarded) {
+          const expectedPath = getExpectedOnboardingPath(onboardingStep, hasDogProfile);
+          if (currentOnboardingPath !== expectedPath) {
+            router.replace(expectedPath);
+          }
+        } else if (topSegment === 'onboarding' || !topSegment) {
           router.replace('/(tabs)');
         }
       } catch (error) {
